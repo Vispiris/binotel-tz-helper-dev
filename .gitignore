@@ -1,0 +1,7 @@
+*
+!.gitignore
+!README.md
+!tampermonkey/
+tampermonkey/*
+!tampermonkey/binotel-tz-helper-safe-dev.user.js
+
