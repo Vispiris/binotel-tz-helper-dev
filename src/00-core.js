@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.1-dev';
+  const SCRIPT_VERSION = '0.15.2-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -873,8 +873,8 @@
   }
 
   function buildExecutionPlan(draft) {
-    const endpointsFirstLine = clean(draft.endpointsFirstLine);
-    const endpointsCount = clean(draft.endpointsCount);
+    const endpointsIgnored = getBlockState(draft, 'endpoints').ignored;
+    const endpoints = endpointsIgnored ? [] : legacyEndpointRows(draft).filter(item => clean(item.number));
     const ringGroups = getRingGroupItems(draft.ringGroupsRows);
     const gsmNumbers = getDraftGsmNumberItems(draft);
     const departments = getDepartmentItems(draft.departmentsRows);
@@ -901,9 +901,11 @@
         : ['• Немає']),
       '',
       '2. Внутрішні лінії',
-      endpointsFirstLine && endpointsCount
-        ? `• Стартова ВЛ ${endpointsFirstLine}, кількість ${endpointsCount}`
-        : '• Пропустити',
+      ...(endpointsIgnored
+        ? ['• Пропустити: блок позначений «Ігнорувати»']
+        : endpoints.length
+          ? endpoints.map(item => `• ВЛ ${clean(item.number)}${item.createAccess ? ` + доступ MyBusiness (${clean(item.accessName) || clean(item.email) || 'дані з конструктора'})` : ''}`)
+          : ['• Пропустити: у блоці немає ВЛ']),
       '',
       '3. Групи виклику',
       ...(ringGroups.length

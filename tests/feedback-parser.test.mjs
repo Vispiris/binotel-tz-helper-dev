@@ -85,6 +85,14 @@ assert.equal(api.isValidEndpointNumber('902000'), true);
 assert.equal(api.isValidEndpointNumber('99'), false);
 assert.equal(api.isValidEndpointNumber('001'), false);
 assert.equal(api.isValidEndpointNumber('10A'), false);
+const endpointPlan = api.buildExecutionPlan({
+  companyId: '10689', projectId: '101982', tzUrl: 'https://docs.google.com/test',
+  blockStates: {}, endpointRows: [{ number: '901000' }, { number: '902000' }],
+  ringGroupsRows: '', gsmNumberItems: [], departmentsRows: '', standardVoiceMessages: '',
+  scenarioItems: [], scheduleItems: [], externallyProvisionedNumbers: '', feedbackItems: [],
+}).join('\n');
+assert.match(endpointPlan, /2\. Внутрішні лінії[\s\S]*• ВЛ 901000[\s\S]*• ВЛ 902000/);
+assert.doesNotMatch(endpointPlan, /2\. Внутрішні лінії\s*\n• Пропустити/);
 
 const withSelect = rows.map(row => [...row]);
 const selectRow = withSelect.findIndex(row => /Запитання Вибір зі списку/.test(row[0]));

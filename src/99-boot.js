@@ -39,6 +39,7 @@
       validateDraft,
       isValidEndpointNumber,
       makeScheduleRuleString,
+      buildExecutionPlan,
     };
   } else {
     boot();
