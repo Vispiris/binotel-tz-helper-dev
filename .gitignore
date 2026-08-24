@@ -4,4 +4,9 @@
 !tampermonkey/
 tampermonkey/*
 !tampermonkey/binotel-tz-helper-safe-dev.user.js
-
+!src/
+!src/**
+!tools/
+!tools/build-userscript.mjs
+!tests/
+!tests/**

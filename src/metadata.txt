@@ -1,0 +1,19 @@
+// ==UserScript==
+// @name         Binotel TZ helper SAFE DEV
+// @namespace    http://tampermonkey.net/
+// @version      0.15.0-dev
+// @description  Конструктор та безпечний виконавець ТЗ Binotel
+// @author       Codex
+// @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
+// @downloadURL  https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
+// @match        https://panel.binotel.com/*
+// @match        https://docs.google.com/spreadsheets/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addStyle
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      docs.google.com
+// @connect      googleusercontent.com
+// @noframes
+// ==/UserScript==

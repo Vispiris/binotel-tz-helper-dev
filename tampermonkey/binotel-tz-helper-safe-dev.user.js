@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.14.0-dev
+// @version      0.15.0-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -12,15 +12,15 @@
 // @grant        GM_getValue
 // @grant        GM_addStyle
 // @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
 // @connect      docs.google.com
 // @connect      googleusercontent.com
 // @noframes
 // ==/UserScript==
-
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.14.0-dev';
+  const SCRIPT_VERSION = '0.15.0-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -42,6 +42,7 @@
     pbxNumbersModule: 'pbxNumbers',
     departmentsModule: 'departments',
     voiceMessagesModule: 'voiceMessages',
+    feedbackModule: 'feedback',
     routesModule: 'routes',
     trunksModule: 'trunks',
   };
@@ -136,6 +137,7 @@
     ringGroupItems: [],
     gsmNumberItems: [],
     departmentItems: [],
+    feedbackItems: [],
     workingActions: [],
     nonWorkingActions: [],
     scenarioItems: [],
@@ -157,6 +159,7 @@
     { id: 'departments', number: '5', title: 'Відділи', projectAware: true, dependsOn: ['endpoints', 'gsmNumbers'] },
     { id: 'voiceMessages', number: '6', title: 'Голосові повідомлення', projectAware: true },
     { id: 'scenarios', number: '7', title: 'Сценарії та графіки', projectAware: true, dependsOn: [] },
+    { id: 'feedback', number: '8.1', title: 'Feedback', projectAware: false, dependsOn: [] },
     { id: 'block11', number: '11', title: 'BinSMS', projectAware: false },
   ];
 
@@ -171,6 +174,37 @@
     'ua_dslobodenyuk_feedback-csat-v1': { path: 'vOffice/base/production/voice/ua_dslobodenyuk_feedback-csat-v1', label: 'Feedback — оцінка CSAT' },
     'ua_dslobodenyuk_feedback-select-v1': { path: 'vOffice/base/production/voice/ua_dslobodenyuk_feedback-select-v1', label: 'Feedback — вибір оцінки' },
     'ua_dslobodenyuk_feedback-thanks-v1': { path: 'vOffice/base/production/voice/ua_dslobodenyuk_feedback-thanks-v1', label: 'Feedback — подяка' },
+    'ua_opisarenko_greeting-with-feedback-appeal-v1': { path: 'vOffice/base/production/voice/ua_opisarenko_greeting-with-feedback-appeal-v1', label: 'Ольга Писаренко — привітання з Feedback-закликом, версія 1' },
+    'ua_opisarenko_feedback-beginning-v1': { path: 'vOffice/base/production/voice/ua_opisarenko_feedback-beginning-v1', label: 'Ольга Писаренко — Feedback початок' },
+    'ua_opisarenko_feedback-csat-v1': { path: 'vOffice/base/production/voice/ua_opisarenko_feedback-csat-v1', label: 'Ольга Писаренко — Feedback оцінка 1–5' },
+    'ua_opisarenko_feedback-select-v1': { path: 'vOffice/base/production/voice/ua_opisarenko_feedback-select-v1', label: 'Ольга Писаренко — Feedback вибір покращення' },
+    'ua_opisarenko_feedback-thanks-v1': { path: 'vOffice/base/production/voice/ua_opisarenko_feedback-thanks-v1', label: 'Ольга Писаренко — Feedback подяка' },
+    'ua_usolovyova_greeting-with-feedback-appeal-v1': { path: 'vOffice/base/production/voice/ua_usolovyova_greeting-with-feedback-appeal-v1', label: 'Юлія Соловйова — привітання з Feedback-закликом, версія 1' },
+    'ua_usolovyova_feedback-beginning-v1': { path: 'vOffice/base/production/voice/ua_usolovyova_feedback-beginning-v1', label: 'Юлія Соловйова — Feedback початок' },
+    'ua_usolovyova_feedback-csat-v1': { path: 'vOffice/base/production/voice/ua_usolovyova_feedback-csat-v1', label: 'Юлія Соловйова — Feedback оцінка 1–5' },
+    'ua_usolovyova_feedback-select-v1': { path: 'vOffice/base/production/voice/ua_usolovyova_feedback-select-v1', label: 'Юлія Соловйова — Feedback вибір покращення' },
+    'ua_usolovyova_feedback-thanks-v1': { path: 'vOffice/base/production/voice/ua_usolovyova_feedback-thanks-v1', label: 'Юлія Соловйова — Feedback подяка' },
+  };
+
+  const FEEDBACK_SPEAKERS = {
+    opisarenko: {
+      label: 'Ольга Писаренко',
+      aliases: /писаренко|pysarenko|pisarenko/i,
+      preset: 'Украинские файлы_Ольга Писаренко_Feedback',
+      voicePrefix: 'ua_opisarenko',
+    },
+    usolovyova: {
+      label: 'Юлія Соловйова',
+      aliases: /солов[йь]?ова|solovyova/i,
+      preset: 'Украинские файлы_Юлія Соловйова_Feedback',
+      voicePrefix: 'ua_usolovyova',
+    },
+    dslobodenyuk: {
+      label: 'Дмитро Слободенюк',
+      aliases: /слободенюк|slobodenyuk/i,
+      preset: 'Украинские файлы_Дмитро Слободенюк_Feedback',
+      voicePrefix: 'ua_dslobodenyuk',
+    },
   };
 
   let stopRequested = false;
@@ -210,6 +244,7 @@
       CONFIG.gsmPortsModule,
       CONFIG.pbxNumbersEnhancedModule,
       CONFIG.pbxNumbersModule,
+      CONFIG.feedbackModule,
     ].includes(clean(module));
   }
 
@@ -921,6 +956,11 @@
         : ['• Графіки пропустити']),
       '• Порядок дій сценарію: додавати у формі у зворотному порядку, бо панель ставить нову дію зверху',
       '',
+      '8.1. Feedback',
+      ...((draft.feedbackItems || []).length
+        ? draft.feedbackItems.map(item => `• ${clean(item.name)} — ${FEEDBACK_SPEAKERS[item.speaker]?.label || item.speaker}; CSAT${item.includeSelect ? ' + Select' : ''}`)
+        : ['• Пропустити']),
+      '',
       'Виконати вручну після скрипта',
       `• Вихідні маршрути: ${clean(draft.manualRouteInstructions) || 'прочитати блок 6 ТЗ і налаштувати вручну'}`,
     ];
@@ -974,6 +1014,15 @@
       throw new Error(`Невідомі стандартні голосові файли: ${unknownVoiceKeys.join(', ')}.`);
     }
 
+    const feedbackItems = getBlockState(draft, 'feedback').ignored ? [] : (draft.feedbackItems || []).filter(item => clean(item.name));
+    const feedbackNames = new Set();
+    feedbackItems.forEach(item => {
+      if (!FEEDBACK_SPEAKERS[item.speaker]) throw new Error(`Feedback "${clean(item.name)}": не вибрано підтримуваного диктора.`);
+      const normalizedName = normalize(item.name);
+      if (feedbackNames.has(normalizedName)) throw new Error(`Feedback-об’єкт "${clean(item.name)}" додано в конструктор двічі.`);
+      feedbackNames.add(normalizedName);
+    });
+
     const scenarios = getBlockState(draft, 'scenarios').ignored ? [] : getScenarioSpecs(draft);
     scenarios.forEach(scenario => {
       if (!scenario.name) throw new Error('Для кожної структури дій потрібно вказати назву сценарію.');
@@ -986,6 +1035,9 @@
           throw new Error(`Сценарій "${scenario.name}": для ${action.type} потрібні цифровий номер і додатний таймаут.`);
         }
       });
+      if (scenario.feedbackName && !feedbackNames.has(normalize(scenario.feedbackName))) {
+        throw new Error(`Сценарій "${scenario.name}": Feedback-об’єкт "${scenario.feedbackName}" відсутній у блоці 8.1.`);
+      }
     });
     const scenarioNames = new Set(scenarios.map(item => item.name));
     const schedules = getBlockState(draft, 'scenarios').ignored ? [] : getScheduleSpecs(draft);
@@ -1069,6 +1121,7 @@
       departmentItems: Array.isArray(draft.departmentItems) && draft.departmentItems.length
         ? draft.departmentItems
         : getDepartmentItems(draft.departmentsRows),
+      feedbackItems: Array.isArray(draft.feedbackItems) ? draft.feedbackItems : [],
       workingActions: Array.isArray(draft.workingActions) && draft.workingActions.length
         ? draft.workingActions
         : legacyScenarioActions(draft.workingScenarioActions),
@@ -1156,9 +1209,13 @@
     return `<option value="">Оберіть сценарій</option>` + (items || []).map(item => `<option value="${escapeHtml(item.name)}" ${clean(selected) === clean(item.name) ? 'selected' : ''}>${escapeHtml(item.name || 'Без назви')}</option>`).join('');
   }
 
+  function feedbackOptions(items, selected) {
+    return `<option value="">Не використовується</option>` + (items || []).map(item => `<option value="${escapeHtml(item.name)}" ${clean(selected) === clean(item.name) ? 'selected' : ''}>${escapeHtml(item.name || 'Без назви')}</option>`).join('');
+  }
+
   function renderScenarioCard(item = {}, context = {}) {
     const key = clean(item.key) || `scenario-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    return `<div class="bth-object bth-scenario-card" data-scenario-card data-scenario-key="${escapeHtml(key)}"><div class="bth-object-head"><b>Сценарій</b><button type="button" data-remove>×</button></div><div class="bth-fields"><label>Назва<input data-scenario-field="name" value="${escapeHtml(item.name || '')}"></label><label>Тип<select data-scenario-field="type"><option value="working" ${item.type !== 'offHours' ? 'selected' : ''}>Робочий</option><option value="offHours" ${item.type === 'offHours' ? 'selected' : ''}>Неробочий</option></select></label></div><label>Об’єкт Feedback<select data-scenario-field="feedbackName"><option value="">Не використовується</option></select></label><label>Дії — у порядку ТЗ</label><div data-scenario-actions>${(item.actions || []).map(action => renderScenarioActionRow(action, key, context)).join('')}</div><button class="bth-add" type="button" data-add-scenario-action>+ Додати дію</button></div>`;
+    return `<div class="bth-object bth-scenario-card" data-scenario-card data-scenario-key="${escapeHtml(key)}"><div class="bth-object-head"><b>Сценарій</b><button type="button" data-remove>×</button></div><div class="bth-fields"><label>Назва<input data-scenario-field="name" value="${escapeHtml(item.name || '')}"></label><label>Тип<select data-scenario-field="type"><option value="working" ${item.type !== 'offHours' ? 'selected' : ''}>Робочий</option><option value="offHours" ${item.type === 'offHours' ? 'selected' : ''}>Неробочий</option></select></label></div><label>Об’єкт Feedback<select data-scenario-field="feedbackName">${feedbackOptions(context.feedbackItems, item.feedbackName)}</select></label><label>Дії — у порядку ТЗ</label><div data-scenario-actions>${(item.actions || []).map(action => renderScenarioActionRow(action, key, context)).join('')}</div><button class="bth-add" type="button" data-add-scenario-action>+ Додати дію</button></div>`;
   }
 
   const SCHEDULE_DAYS = [{ value: 'mon', label: 'Пн' }, { value: 'tue', label: 'Вт' }, { value: 'wed', label: 'Ср' }, { value: 'thu', label: 'Чт' }, { value: 'fri', label: 'Пт' }, { value: 'sat', label: 'Сб' }, { value: 'sun', label: 'Нд' }];
@@ -1300,7 +1357,6 @@
     saveFlow({ stage: draft.skipCompanyParams ? 'endpoints' : 'company', index: 0 });
     await runAutomaticFlow();
   }
-
   async function applyCompanyParams() {
     const draft = loadDraft();
 
@@ -1967,7 +2023,7 @@
     const index = Number(flow.index || 0);
 
     if (!keys.length || index >= keys.length) {
-      saveFlow({ stage: 'scenarios', index: 0, scenarioAction: '' });
+      saveFlow({ stage: 'feedback', index: 0, feedbackAction: 'enable' });
       await runAutomaticFlow();
       return;
     }
@@ -1996,7 +2052,269 @@
     log(`Додаю готовий український файл: ${item.label}.`, 'info');
     window.location.href = url.toString();
   }
+  function getFeedbackSpecs(draft = loadDraft()) {
+    return (draft.feedbackItems || []).map((item, index) => ({
+      key: clean(item.key) || `feedback-${index + 1}`,
+      name: clean(item.name),
+      speaker: clean(item.speaker),
+      includeSelect: Boolean(item.includeSelect),
+    })).filter(item => item.name);
+  }
 
+  function feedbackVoicePath(spec, type) {
+    const speaker = FEEDBACK_SPEAKERS[spec.speaker];
+    if (!speaker) throw new Error(`Feedback "${spec.name}": невідомий диктор ${spec.speaker || '—'}.`);
+    const suffix = {
+      greeting: 'greeting-with-feedback-appeal-v1',
+      beginning: 'feedback-beginning-v1',
+      csat: 'feedback-csat-v1',
+      select: 'feedback-select-v1',
+      thanks: 'feedback-thanks-v1',
+    }[type];
+    return `vOffice/base/production/voice/${speaker.voicePrefix}_${suffix}`;
+  }
+
+  function renderFeedbackItem(item = {}) {
+    return `<div class="bth-object" data-item="feedback"><div class="bth-object-head"><b>Feedback-об’єкт</b><button type="button" data-remove>×</button></div><div class="bth-fields bth-fields-3"><label>Назва об’єкта<input data-item-field="name" value="${escapeHtml(item.name || '')}" placeholder="Загальна"></label><label>Диктор<select data-item-field="speaker">${optionList(Object.entries(FEEDBACK_SPEAKERS).map(([value, speaker]) => ({ value, text: speaker.label })), item.speaker || 'usolovyova')}</select></label><label class="bth-checkbox"><input type="checkbox" data-item-field="includeSelect" ${item.includeSelect ? 'checked' : ''}>Додати питання Select «Що покращити»</label></div><div class="bth-note">CSAT 1–5 додається завжди першим. Select додається лише коли він потрібен у ТЗ.</div></div>`;
+  }
+
+  function setPanelPromptAnswer(answer, action) {
+    const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+    const originalPrompt = pageWindow.prompt;
+    pageWindow.prompt = () => answer;
+    try {
+      action();
+    } finally {
+      window.setTimeout(() => { pageWindow.prompt = originalPrompt; }, 0);
+    }
+  }
+
+  function getFeedbackFeatureValue() {
+    return clean(getField('input[name="feedback_activated"]')?.value);
+  }
+
+  function enableFeedbackFeature() {
+    const hidden = getField('input[name="feedback_activated"]');
+    const wrapper = $('#feedback_activated');
+    const enable = wrapper && $('[data-value="1"]', wrapper);
+    if (!hidden || !wrapper || !enable) throw new Error('Не знайдено перемикач Feedback у параметрах компанії.');
+
+    if (getFeedbackFeatureValue() === '1') return false;
+    const unlock = $('#unlock-button');
+    if (!unlock) throw new Error('Не знайдено замок у параметрах компанії.');
+    setPanelPromptAnswer('binotel', () => unlock.click());
+    enable.click();
+    if (getFeedbackFeatureValue() !== '1') throw new Error('Панель не перемкнула Feedback у стан «Увімкнено».');
+
+    const form = hidden.closest('form');
+    const submit = form && $all('button[type="submit"], input[type="submit"]', form).find(button => /сохран|зберег/i.test(clean(button.textContent || button.value)));
+    if (!submit) throw new Error('Не знайдено кнопку збереження параметрів компанії для Feedback.');
+    submit.click();
+    return true;
+  }
+
+  function feedbackPresetReady(spec) {
+    const required = ['beginning', 'csat', 'thanks', ...(spec.includeSelect ? ['select'] : [])].map(type => feedbackVoicePath(spec, type));
+    const values = new Set($all('select[name="greetingData"], select[name="thanksData"]').flatMap(select => Array.from(select.options || []).map(option => option.value)));
+    return required.every(value => values.has(value));
+  }
+
+  function getFeedbackSurveyEntries(name) {
+    const target = normalize(name);
+    const entries = [];
+    $all('table tr').forEach(row => {
+      const cells = Array.from(row.cells || []);
+      if (!cells.some(cell => normalize(cell.textContent) === target)) return;
+      const link = $('a[href*="module=feedback"][href*="surveyID"]', row);
+      const idFromLink = link ? new URL(link.href, location.href).searchParams.get('surveyID') : '';
+      const idFromCell = cells.map(cell => digitsOnly(cell.textContent)).find(value => /^\d+$/.test(value)) || '';
+      const surveyID = clean(idFromLink || idFromCell);
+      if (surveyID) entries.push({ surveyID, url: link?.href || '' });
+    });
+    return Array.from(new Map(entries.map(item => [item.surveyID, item])).values());
+  }
+
+  function feedbackEditUrl(surveyID = '') {
+    const url = new URL(buildPanelUrl(CONFIG.feedbackModule, 'edit'));
+    if (surveyID) url.searchParams.set('surveyID', surveyID);
+    else url.searchParams.set('type', 'call');
+    return url.toString();
+  }
+
+  function getFeedbackForm() {
+    const greeting = getField('select[name="greetingData"]');
+    return greeting?.closest('form') || null;
+  }
+
+  function submitFeedbackForm() {
+    const form = getFeedbackForm();
+    const submit = form && $all('button[type="submit"], input[type="submit"]', form).find(button => /сохран|зберег/i.test(clean(button.textContent || button.value)));
+    if (!submit) throw new Error('Не знайдено кнопку збереження Feedback-об’єкта.');
+    submit.click();
+  }
+
+  function fillFeedbackBase(spec) {
+    const name = getField('input[name="name"]');
+    const greeting = getField('select[name="greetingData"]');
+    const thanks = getField('select[name="thanksData"]');
+    if (!name || !greeting || !thanks) throw new Error('Форма Feedback неповна: немає назви, початку або подяки.');
+    setFieldValue(name, spec.name);
+    if (!setSelectValue(greeting, feedbackVoicePath(spec, 'beginning'))) throw new Error(`Feedback "${spec.name}": не знайдено голосове «Початок».`);
+    if (!setSelectValue(thanks, feedbackVoicePath(spec, 'thanks'))) throw new Error(`Feedback "${spec.name}": не знайдено голосове «Вдячність».`);
+  }
+
+  function feedbackQuestionFields() {
+    return $all('input[name^="listOfQuestions"][name$="[name]"]').map(name => {
+      const prefix = name.name.slice(0, name.name.lastIndexOf('['));
+      return {
+        name,
+        type: getField(`[name="${prefix}[type]"]`),
+        data: getField(`[name="${prefix}[questionData]"]`),
+      };
+    });
+  }
+
+  function configureFeedbackQuestions(spec) {
+    const expected = [
+      { type: 'csat', data: feedbackVoicePath(spec, 'csat') },
+      ...(spec.includeSelect ? [{ type: 'select', data: feedbackVoicePath(spec, 'select') }] : []),
+    ];
+    if (feedbackQuestionFields().length) throw new Error(`Feedback "${spec.name}": новий об’єкт уже містить питання; автоматичне перезаписування заборонене.`);
+    const add = $('#add-question');
+    if (!add) throw new Error('Не знайдено кнопку «Додати питання» у Feedback.');
+    expected.forEach(() => add.click());
+    const fields = feedbackQuestionFields();
+    if (fields.length !== expected.length) throw new Error(`Feedback "${spec.name}": панель додала ${fields.length} питань замість ${expected.length}.`);
+    expected.forEach((item, index) => {
+      const field = fields[index];
+      setFieldValue(field.name, 'Оценка качества работы сотрудника');
+      if (!setSelectValue(field.type, item.type)) throw new Error(`Feedback "${spec.name}": не вдалося вибрати тип ${item.type}.`);
+      if (!setSelectValue(field.data, item.data)) throw new Error(`Feedback "${spec.name}": не вдалося вибрати голосове для ${item.type}.`);
+    });
+  }
+
+  function assertFeedbackSurveyMatches(spec) {
+    const name = clean(getField('input[name="name"]')?.value);
+    const greeting = clean(getField('select[name="greetingData"]')?.value);
+    const thanks = clean(getField('select[name="thanksData"]')?.value);
+    if (name !== spec.name) throw new Error(`Перевірка Feedback: очікується назва "${spec.name}", знайдено "${name}".`);
+    if (greeting !== feedbackVoicePath(spec, 'beginning')) throw new Error(`Feedback "${spec.name}": невірне голосове початку.`);
+    if (thanks !== feedbackVoicePath(spec, 'thanks')) throw new Error(`Feedback "${spec.name}": невірне голосове подяки.`);
+    const expected = [
+      { type: 'csat', data: feedbackVoicePath(spec, 'csat') },
+      ...(spec.includeSelect ? [{ type: 'select', data: feedbackVoicePath(spec, 'select') }] : []),
+    ];
+    const actual = feedbackQuestionFields().map(field => ({ type: clean(field.type?.value), data: clean(field.data?.value) }));
+    if (actual.length !== expected.length) throw new Error(`Feedback "${spec.name}": очікується ${expected.length} питань, знайдено ${actual.length}.`);
+    expected.forEach((item, index) => {
+      if (actual[index].type !== item.type || actual[index].data !== item.data) {
+        throw new Error(`Feedback "${spec.name}": питання ${index + 1} не відповідає ТЗ.`);
+      }
+    });
+  }
+
+  async function applyFeedback() {
+    const draft = loadDraft();
+    const specs = getFeedbackSpecs(draft);
+    const flow = loadFlow() || {};
+    const index = Number(flow.index || 0);
+    if (!specs.length || index >= specs.length) {
+      saveFlow({ stage: 'scenarios', index: 0, feedbackAction: '' });
+      await runAutomaticFlow();
+      return;
+    }
+
+    const spec = specs[index];
+    const action = clean(flow.feedbackAction) || 'enable';
+    if (action === 'enable' || action === 'verifyEnable') {
+      if (getModule() !== CONFIG.companyParamsModule) {
+        window.location.href = buildPanelUrl(CONFIG.companyParamsModule);
+        return;
+      }
+      if (action === 'verifyEnable') {
+        if (getFeedbackFeatureValue() !== '1') throw new Error('Feedback не залишився увімкненим після збереження параметрів компанії.');
+        log('Feedback у параметрах компанії увімкнено та перевірено.', 'success');
+        saveFlow({ stage: 'feedback', index, feedbackAction: 'ensurePreset' });
+        window.location.href = feedbackEditUrl();
+        return;
+      }
+      if (getFeedbackFeatureValue() === '1') {
+        saveFlow({ stage: 'feedback', index, feedbackAction: 'ensurePreset' });
+        window.location.href = feedbackEditUrl();
+        return;
+      }
+      saveFlow({ stage: 'feedback', index, feedbackAction: 'verifyEnable' });
+      log('Вмикаю Feedback у параметрах компанії.', 'info');
+      enableFeedbackFeature();
+      return;
+    }
+
+    if (action === 'ensurePreset' || action === 'verifyPreset') {
+      const isFeedbackForm = getModule() === CONFIG.feedbackModule && getParams().get('action') === 'edit' && Boolean(getField('select[name="greetingData"]'));
+      if (!isFeedbackForm) {
+        window.location.href = feedbackEditUrl();
+        return;
+      }
+      if (feedbackPresetReady(spec)) {
+        log(`Набір Feedback ${FEEDBACK_SPEAKERS[spec.speaker].label} доступний.`, 'success');
+        saveFlow({ stage: 'feedback', index, feedbackAction: 'findSurvey' });
+        window.location.href = buildPanelUrl(CONFIG.feedbackModule);
+        return;
+      }
+      if (action === 'verifyPreset') throw new Error(`Після додавання набір Feedback ${FEEDBACK_SPEAKERS[spec.speaker].label} не з’явився у формах.`);
+      const url = new URL(buildPanelUrl(CONFIG.voiceMessagesModule));
+      url.searchParams.set('action', 'addStandardPreset');
+      url.searchParams.set('preset', FEEDBACK_SPEAKERS[spec.speaker].preset);
+      saveFlow({ stage: 'feedback', index, feedbackAction: 'verifyPreset' });
+      log(`Додаю набір Feedback ${FEEDBACK_SPEAKERS[spec.speaker].label}, версія 1.`, 'info');
+      window.location.href = url.toString();
+      return;
+    }
+
+    if (action === 'findSurvey') {
+      if (getModule() !== CONFIG.feedbackModule || getParams().get('action')) {
+        window.location.href = buildPanelUrl(CONFIG.feedbackModule);
+        return;
+      }
+      const entries = getFeedbackSurveyEntries(spec.name);
+      if (entries.length > 1) throw new Error(`Знайдено ${entries.length} Feedback-об’єкти "${spec.name}". Спочатку приберіть дублікати.`);
+      if (entries.length === 1) {
+        saveFlow({ stage: 'feedback', index, feedbackAction: 'verifySurvey' });
+        window.location.href = feedbackEditUrl(entries[0].surveyID);
+        return;
+      }
+      saveFlow({ stage: 'feedback', index, feedbackAction: 'createBase' });
+      window.location.href = feedbackEditUrl();
+      return;
+    }
+
+    if (action === 'createBase') {
+      fillFeedbackBase(spec);
+      saveFlow({ stage: 'feedback', index, feedbackAction: 'configureQuestions' });
+      log(`Створюю Feedback-об’єкт "${spec.name}".`, 'info');
+      submitFeedbackForm();
+      return;
+    }
+
+    if (action === 'configureQuestions') {
+      if (!getParams().get('surveyID')) throw new Error(`Після створення Feedback "${spec.name}" панель не повернула surveyID.`);
+      configureFeedbackQuestions(spec);
+      saveFlow({ stage: 'feedback', index, feedbackAction: 'verifySurvey' });
+      log(`Додаю питання Feedback "${spec.name}": CSAT${spec.includeSelect ? ' та Select' : ''}.`, 'info');
+      submitFeedbackForm();
+      return;
+    }
+
+    if (action === 'verifySurvey') {
+      assertFeedbackSurveyMatches(spec);
+      log(`Feedback "${spec.name}" повністю перевірено.`, 'success');
+      saveFlow({ stage: 'feedback', index: index + 1, feedbackAction: 'enable' });
+      window.location.href = buildPanelUrl(CONFIG.feedbackModule);
+      return;
+    }
+
+    throw new Error(`Невідомий стан Feedback: ${action}.`);
+  }
   function getNamedLinkEntry(name, action, projectId) {
     const target = clean(name).toLowerCase();
     const candidates = [];
@@ -2115,6 +2433,15 @@
       throw new Error(`Перевірка сценарію "${spec.name}": невірний тип робочого часу.`);
     }
 
+    const feedbackField = getField('select[name="reviewStructureID"]');
+    const feedbackName = clean(feedbackField?.selectedOptions?.[0]?.textContent);
+    if (spec.feedbackName && normalize(feedbackName) !== normalize(spec.feedbackName)) {
+      throw new Error(`Перевірка сценарію "${spec.name}": очікується Feedback "${spec.feedbackName}", знайдено "${feedbackName || 'не вибрано'}".`);
+    }
+    if (!spec.feedbackName && clean(feedbackField?.value) !== '0') {
+      throw new Error(`Перевірка сценарію "${spec.name}": Feedback не передбачений ТЗ, але у формі вибрано "${feedbackName}".`);
+    }
+
     const actual = readScenarioActionsFromForm();
     if (actual.length !== spec.actions.length) {
       throw new Error(`Перевірка сценарію "${spec.name}": очікується ${spec.actions.length} дій, знайдено ${actual.length}.`);
@@ -2192,6 +2519,18 @@
     setFieldValue(nameField, spec.name);
     if (!setSelectValue(projectField, draft.projectId)) throw new Error(`Не зміг вибрати проєкт ${draft.projectId} у сценарії.`);
     if (!setSelectValue(offHoursField, spec.isOffHours)) throw new Error(`Не зміг вибрати робочий тип сценарію ${spec.name}.`);
+
+    const feedbackField = getField('select[name="reviewStructureID"]');
+    if (spec.feedbackName) {
+      const feedbackSwitch = $('#feedbackSwitch');
+      if (!feedbackSwitch || !feedbackField) throw new Error(`Сценарій "${spec.name}": не знайдено вкладку або поле Feedback.`);
+      feedbackSwitch.click();
+      if (!selectNamedOption(feedbackField, spec.feedbackName)) {
+        throw new Error(`Сценарій "${spec.name}": у панелі не знайдено Feedback-об’єкт "${spec.feedbackName}".`);
+      }
+    } else if (feedbackField && !setSelectValue(feedbackField, '0')) {
+      throw new Error(`Сценарій "${spec.name}": не вдалося вимкнути Feedback.`);
+    }
 
     [...spec.actions].reverse().forEach(addScenarioActionToForm);
     assertScenarioFormMatches(spec);
@@ -2409,7 +2748,6 @@
     log(message, 'warn');
     showCenterAlert(message, 'warn');
   }
-
   function getStageBlockId(stage) {
     if (stage === 'company') return 'company';
     if (stage === 'endpoints') return 'endpoints';
@@ -2417,6 +2755,7 @@
     if (['gsmNumbers', 'gsmTemporaryOpen', 'gsmTemporaryFind'].includes(stage)) return 'gsmNumbers';
     if (stage === 'departments') return 'departments';
     if (stage === 'voiceMessages') return 'voiceMessages';
+    if (stage === 'feedback') return 'feedback';
     if (['scenarios', 'schedule', 'bindIncomingNumber'].includes(stage)) return 'scenarios';
     if (stage === 'manualRouteGate') return '';
     return '';
@@ -2425,7 +2764,8 @@
   function getNextStageAfterBlock(blockId) {
     return {
       company: 'endpoints', endpoints: 'ringGroups', ringGroups: 'gsmNumbers',
-      gsmNumbers: 'departments', departments: 'voiceMessages', voiceMessages: 'scenarios',
+      gsmNumbers: 'departments', departments: 'voiceMessages', voiceMessages: 'feedback',
+      feedback: 'scenarios',
       scenarios: 'manualRouteGate',
     }[blockId] || 'complete';
   }
@@ -2441,6 +2781,7 @@
       if (actionTypes.has('endpoint')) dependencies.push('endpoints');
       if (actionTypes.has('ringGroup')) dependencies.push('ringGroups');
       if (actionTypes.has('voice')) dependencies.push('voiceMessages');
+      if (getScenarioSpecs(draft).some(item => clean(item.feedbackName))) dependencies.push('feedback');
     }
     const dependency = [...new Set(dependencies)].find(id => getBlockState(draft, id).ignored || failed[id]);
     if (dependency) return `не виконана залежність «${TZ_BLOCKS.find(item => item.id === dependency)?.title || dependency}»`;
@@ -2499,6 +2840,7 @@
       if (flow.stage === 'gsmTemporaryFind') return await applyGsmTemporaryFind();
       if (flow.stage === 'departments') return await applyDepartments();
       if (flow.stage === 'voiceMessages') return await applyStandardVoiceMessages();
+      if (flow.stage === 'feedback') return await applyFeedback();
       if (flow.stage === 'scenarios') return await applyScenarios();
       if (flow.stage === 'schedule') return await applySchedule();
       if (flow.stage === 'bindIncomingNumber') return await bindIncomingNumber();
@@ -2514,7 +2856,6 @@
       return runAutomaticFlow();
     }
   }
-
   function loadDeleteFlow() {
     try {
       return JSON.parse(localStorage.getItem(CONFIG.deleteFlowStorageKey) || 'null');
@@ -3165,9 +3506,17 @@
     if (/чекайте|очікуван/.test(text)) return 'ua_waiting';
     if (/вихідн/.test(text)) return 'ua_weekend';
     if (/неробоч/.test(text)) return 'ua_off-hoursvm';
-    if (/feedback/.test(text) && !/без\s*feedback/.test(text)) return 'ua_dslobodenyuk_greeting-with-feedback-appeal-v1';
+    if (/feedback|фідбек|заклик/.test(text) && !/без\s*(feedback|фідбек)/.test(text)) {
+      const speaker = feedbackSpeakerFromText(text) || 'dslobodenyuk';
+      return `${FEEDBACK_SPEAKERS[speaker].voicePrefix}_greeting-with-feedback-appeal-v1`;
+    }
     if (/робоч/.test(text)) return 'ua_greeting';
     return '';
+  }
+
+  function feedbackSpeakerFromText(value) {
+    const text = clean(value);
+    return Object.entries(FEEDBACK_SPEAKERS).find(([, speaker]) => speaker.aliases.test(text))?.[0] || '';
   }
 
   function tzDays(value) {
@@ -3207,6 +3556,7 @@
       routesEnd: findTzRow(rows, /6\.1\s*автообробка/),
       access: findTzRow(rows, /7\.\s*e-mail для отримання/),
       voices: findTzRow(rows, /8\.\s*голосові повідомлення/),
+      feedback: findTzRow(rows, /8\.1\.\s*голосові повідомлення\s*feedback/),
       voicesEnd: findTzRow(rows, /9\.\s*(сrm|crm)/),
       block11: findTzRow(rows, /11\.\s*тимчасове альфа ім['’]?я/),
       block12: findTzRow(rows, /12\.\s*getcall/),
@@ -3214,7 +3564,7 @@
     const issues = {};
     const patch = {
       endpointRows: [], ringGroupItems: [], gsmNumberItems: [], departmentItems: [],
-      scenarioItems: [], scheduleItems: [], standardVoiceMessages: '', manualRouteInstructions: '',
+      scenarioItems: [], scheduleItems: [], feedbackItems: [], standardVoiceMessages: '', manualRouteInstructions: '',
     };
 
     const headEnd = section.numbers >= 0 ? section.numbers : Math.min(rows.length, 12);
@@ -3344,16 +3694,46 @@
     if (section.groups < 0) issues.ringGroups = 'Не знайдено розділ 4 з групами.';
     else if (!patch.ringGroupItems.length) issues.ringGroups = 'Розділ груп знайдено, але групи не розпізнано.';
 
-    const voiceEnd = section.voicesEnd >= 0 ? section.voicesEnd : rows.length;
+    const voiceEnd = section.feedback >= 0 ? section.feedback : (section.voicesEnd >= 0 ? section.voicesEnd : rows.length);
     const voiceKeys = new Set();
     if (section.voices >= 0) {
       for (let index = section.voices + 1; index < voiceEnd; index += 1) {
         if (!/стандарт.*укра/.test(tzRowText(rows[index]))) continue;
         const key = tzVoiceKey(rows[index].join(' '));
-        if (key) voiceKeys.add(key);
+        if (key && !/greeting-with-feedback-appeal/.test(key)) voiceKeys.add(key);
       }
     } else {
       issues.voiceMessages = 'Не знайдено розділ 8 з голосовими повідомленнями.';
+    }
+
+    if (section.feedback >= 0) {
+      const feedbackEnd = section.voicesEnd >= 0 ? section.voicesEnd : rows.length;
+      const beginningRow = findTzRow(rows, /feedback\s*початок/i, section.feedback + 1, feedbackEnd);
+      const csatRow = findTzRow(rows, /питання\s*від\s*1\s*[-–—]\s*5|оцінк.*1\s*[-–—]\s*5/i, section.feedback + 1, feedbackEnd);
+      const selectRow = findTzRow(rows, /вибір\s*зі\s*списку|що\s*слід\s*покращити/i, section.feedback + 1, feedbackEnd);
+      const thanksRow = findTzRow(rows, /feedback\s*подяк|feedback\s*вдяч/i, section.feedback + 1, feedbackEnd);
+      const nameSearchEnd = beginningRow >= 0 ? beginningRow : Math.min(section.feedback + 5, feedbackEnd);
+      const feedbackNameRow = rows.findIndex((row, index) => index > section.feedback && index < nameSearchEnd && row.slice(1).some(cell => clean(cell) && !isTzPlaceholder(cell) && !feedbackSpeakerFromText(cell)));
+      const width = Math.max(...rows.slice(section.feedback, feedbackEnd).map(row => row.length), 1);
+      for (let column = 1; column < width; column += 1) {
+        const name = clean(rows[feedbackNameRow]?.[column]);
+        if (!name || isTzPlaceholder(name) || /вкажи\s*назву/i.test(name)) continue;
+        const samples = [beginningRow, csatRow, selectRow, thanksRow]
+          .filter(index => index >= 0)
+          .map(index => clean(rows[index]?.[column]));
+        const speaker = feedbackSpeakerFromText(samples.join(' '));
+        const selectValue = selectRow >= 0 ? clean(rows[selectRow]?.[column]) : '';
+        const includeSelect = Boolean(selectValue) && !isTzPlaceholder(selectValue) && !/не\s*потріб|не\s*нуж/i.test(normalize(selectValue));
+        patch.feedbackItems.push({
+          key: `feedback-${patch.feedbackItems.length + 1}`,
+          name,
+          speaker,
+          includeSelect,
+        });
+        if (!speaker) issues.feedback = `Feedback "${name}": не розпізнано диктора.`;
+        if (beginningRow < 0 || csatRow < 0 || thanksRow < 0) issues.feedback = `Feedback "${name}": не знайдено всі обов’язкові рядки початку, CSAT і подяки.`;
+      }
+      if (!patch.feedbackItems.length) issues.feedback = 'Розділ 8.1 знайдено, але Feedback-об’єкти не розпізнано.';
     }
 
     const scenarioEnd = section.backupNumbers >= 0 ? section.backupNumbers : (section.routes >= 0 ? section.routes : rows.length);
@@ -3369,10 +3749,11 @@
         for (let index = scenarioNumberRow + 1; index < scenarioEnd; index += 1) {
           const value = clean(rows[index][column]);
           if (!value) continue;
-          const voiceKey = tzVoiceKey(value);
-          if (/голосове повідомлення/i.test(value) && voiceKey) {
+          const rowContext = `${clean(rows[index]?.[0])} ${value}`;
+          const voiceKey = tzVoiceKey(rowContext);
+          if (/голосове повідомлення|привітання|feedback|фідбек/i.test(rowContext) && voiceKey) {
             actions.push({ type: 'voice', voiceKey });
-            voiceKeys.add(voiceKey);
+            if (!/greeting-with-feedback-appeal/.test(voiceKey)) voiceKeys.add(voiceKey);
             pendingTargetIndex = -1;
             pendingTargetType = '';
             continue;
@@ -3410,11 +3791,16 @@
         }
         const incomingNumbers = scenarioNumberRow >= 0 ? extractTzPhones(rows[scenarioNumberRow][column]) : [];
         if (!actions.length && !incomingNumbers.length) continue;
+        const usesFeedback = actions.some(action => action.type === 'voice' && /greeting-with-feedback-appeal/.test(action.voiceKey));
+        const feedbackName = usesFeedback && patch.feedbackItems.length === 1 ? clean(patch.feedbackItems[0].name) : '';
+        if (usesFeedback && patch.feedbackItems.length !== 1) {
+          issues.scenarios = `Сценарій "${name}" використовує Feedback, але однозначний об’єкт з блока 8.1 не визначено.`;
+        }
         patch.scenarioItems.push({
           key: `scenario-${patch.scenarioItems.length + 1}`,
           name,
           type: /неробоч/.test(normalize(name)) ? 'offHours' : 'working',
-          feedbackName: '',
+          feedbackName,
           actions,
           incomingNumbers,
         });
@@ -3521,7 +3907,6 @@
     $(`#${CONFIG.modalId}`).classList.add('open');
     return next;
   }
-
   function bindConstructorEvents(modal) {
     const refreshRunButton = () => {
       const unresolved = $all('[data-block]', modal).filter(block => {
@@ -3571,6 +3956,13 @@
         select.innerHTML = targetOptions(groups, selected);
       });
     };
+    const refreshFeedbackReferences = () => {
+      const items = collectItemRows(modal, 'feedback').filter(item => clean(item.name));
+      $all('[data-scenario-field="feedbackName"]', modal).forEach(select => {
+        const selected = select.value;
+        select.innerHTML = feedbackOptions(items, selected);
+      });
+    };
     $all('[data-item="endpoint"]', modal).forEach(refreshAccessFields);
     $all('[data-schedule-card]', modal).forEach(refreshScheduleMode);
     modal.addEventListener('input', event => {
@@ -3582,6 +3974,7 @@
       if (badge) { badge.className = 'bth-badge ready'; badge.textContent = 'Перевірено інженером'; }
       if (event.target.matches('[data-scenario-field="name"], [data-item="gsm"] [data-item-field="number"], [data-item="gsm"] [data-item-field="name"]')) refreshScheduleReferences();
       if (event.target.matches('[data-item="endpoint"] [data-item-field="number"], [data-item="group"] [data-item-field="number"], [data-item="group"] [data-item-field="name"]')) refreshScenarioTargets();
+      if (event.target.matches('[data-item="feedback"] [data-item-field="name"]')) refreshFeedbackReferences();
       refreshRunButton();
     });
     modal.addEventListener('change', event => {
@@ -3613,7 +4006,7 @@
       if (add) {
         const kind = add.dataset.add;
         if (kind === 'scenario-card') {
-          const context = { endpointRows: collectItemRows(modal, 'endpoints'), ringGroupItems: collectItemRows(modal, 'groups') };
+          const context = { endpointRows: collectItemRows(modal, 'endpoints'), ringGroupItems: collectItemRows(modal, 'groups'), feedbackItems: collectItemRows(modal, 'feedback') };
           $('[data-list="scenario-cards"]', modal).insertAdjacentHTML('beforeend', renderScenarioCard({}, context));
           return;
         }
@@ -3624,15 +4017,15 @@
           refreshScheduleMode(list.lastElementChild);
           return;
         }
-        const targetName = kind === 'endpoint' ? 'endpoints' : kind === 'group' ? 'groups' : kind === 'gsm' ? 'gsm' : 'departments';
+        const targetName = kind === 'endpoint' ? 'endpoints' : kind === 'group' ? 'groups' : kind === 'gsm' ? 'gsm' : kind === 'feedback' ? 'feedback' : 'departments';
         const list = $(`[data-list="${targetName}"]`, modal);
-        const html = renderSimpleItem(kind);
+        const html = kind === 'feedback' ? renderFeedbackItem() : renderSimpleItem(kind);
         list.insertAdjacentHTML('beforeend', html);
         if (kind === 'endpoint') refreshAccessFields(list.lastElementChild);
         return;
       }
       const remove = event.target.closest('[data-remove]');
-      if (remove) { remove.closest('.bth-item,.bth-object,.bth-scenario-card,.bth-schedule-card')?.remove(); refreshScheduleReferences(); refreshScenarioTargets(); return; }
+      if (remove) { remove.closest('.bth-item,.bth-object,.bth-scenario-card,.bth-schedule-card')?.remove(); refreshScheduleReferences(); refreshScenarioTargets(); refreshFeedbackReferences(); return; }
       const move = event.target.closest('[data-move]');
       if (move) {
         const row = move.closest('.bth-item');
@@ -3721,6 +4114,12 @@
           <h4>Графіки</h4><div data-list="schedule-cards">${structured.scheduleItems.map(item => renderScheduleCard(item, structured)).join('')}</div><button class="bth-add" type="button" data-add="schedule-card">+ Додати графік</button>
           <div class="bth-note">Назви сценаріїв, ВЛ, групи, голосові та вхідні номери вибираються зі створених об’єктів. Технічне правило графіка скрипт формує сам.</div>
         </div>
+        <div class="bth-card bth-wide" data-block="feedback">
+          ${blockCardHeader(draft, 'feedback', '8.1', 'Feedback')}
+          <div data-list="feedback">${structured.feedbackItems.map(item => renderFeedbackItem(item)).join('')}</div>
+          <button class="bth-add" type="button" data-add="feedback">+ Додати Feedback-об’єкт</button>
+          <div class="bth-note">Скрипт увімкне Feedback у параметрах компанії, додасть набір диктора, створить опитування та прив’яже його до вибраних сценаріїв.</div>
+        </div>
         <div class="bth-card"><h3>Виконати вручну після скрипта</h3><p>Вихідні маршрути скрипт не змінює.</p><label>Зчитано з блока 6 ТЗ</label><textarea data-field="manualRouteInstructions" readonly placeholder="У ТЗ не знайдено опис вихідних маршрутів">${escapeHtml(draft.manualRouteInstructions || '')}</textarea><div class="bth-note">Цей список формує скрипт. Інженер перевіряє його за ТЗ і виконує маршрут вручну.</div></div>
         <div class="bth-card" data-block="block11">
           ${blockCardHeader(draft, 'block11', '11', 'BinSMS')}
@@ -3780,6 +4179,7 @@
     patch.ringGroupItems = collectItemRows(modal, 'groups').map(item => ({ ...item, endpoints: normalizeLineList(item.endpoints) }));
     patch.gsmNumberItems = collectItemRows(modal, 'gsm');
     patch.departmentItems = collectItemRows(modal, 'departments').map(item => ({ ...item, phoneNumbers: normalizeLineList(item.phoneNumbers), endpoints: normalizeLineList(item.endpoints) }));
+    patch.feedbackItems = collectItemRows(modal, 'feedback');
     patch.scenarioItems = collectScenarioCards(modal);
     patch.scheduleItems = collectScheduleCards(modal);
     patch.createTemporaryNumbers = patch.gsmNumberItems.some(item => item.createTemporary);
@@ -3818,7 +4218,6 @@
       hideStopButton();
     }
   }
-
   function boot() {
     if (location.hostname === 'docs.google.com' && location.pathname.includes('/spreadsheets/')) {
       renderGoogleSheetCapture();
@@ -3850,7 +4249,16 @@
     setTimeout(() => runWithStop(runAutomaticFlow), 500);
   }
 
-  boot();
+  if (globalThis.__BINOTEL_TZ_HELPER_TEST__) {
+    globalThis.__BINOTEL_TZ_HELPER_TEST_API__ = {
+      parseTzSnapshot,
+      tzVoiceKey,
+      getFeedbackSpecs,
+      feedbackVoicePath,
+      getScenarioSpecs,
+      validateDraft,
+    };
+  } else {
+    boot();
+  }
 })();
-
-
