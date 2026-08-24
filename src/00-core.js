@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.0-dev';
+  const SCRIPT_VERSION = '0.15.1-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -326,6 +326,10 @@
 
   function digitsOnly(value) {
     return String(value || '').replace(/\D+/g, '');
+  }
+
+  function isValidEndpointNumber(value) {
+    return /^[1-9]\d{2,}$/.test(clean(value));
   }
 
   function visibleField(field) {
@@ -985,8 +989,16 @@
       throw new Error('Оберіть регіон або поставте галку "регіон не важливий".');
     }
 
-    if (!getBlockState(draft, 'endpoints').ignored && (draft.endpointRows || []).length && (!clean(draft.endpointsFirstLine) || !clean(draft.endpointsCount))) {
-      throw new Error('Блок 2: поточний виконавець додає лише послідовні ВЛ. Непослідовні номери познач «Ігнорувати» та внеси вручну.');
+    if (!getBlockState(draft, 'endpoints').ignored) {
+      const endpointNumbers = (draft.endpointRows || []).map(item => clean(item.number)).filter(Boolean);
+      const invalidEndpointNumbers = endpointNumbers.filter(number => !isValidEndpointNumber(number));
+      if (invalidEndpointNumbers.length) {
+        throw new Error(`Блок 2: некоректні ВЛ: ${[...new Set(invalidEndpointNumbers)].join(', ')}. Дозволені лише цифри, номер має починатися від 100, без початкових нулів.`);
+      }
+      const duplicateEndpointNumbers = endpointNumbers.filter((number, index) => endpointNumbers.indexOf(number) !== index);
+      if (duplicateEndpointNumbers.length) {
+        throw new Error(`Блок 2: ВЛ повторюються: ${[...new Set(duplicateEndpointNumbers)].join(', ')}.`);
+      }
     }
 
     const unknownVoiceKeys = getBlockState(draft, 'voiceMessages').ignored ? [] : normalizeLineList(draft.standardVoiceMessages)
@@ -1203,7 +1215,8 @@
 
   function renderScheduleRule(rule = {}, scenarioItems = []) {
     const days = normalizeLineList(rule.days || 'mon,tue,wed,thu,fri');
-    return `<div class="bth-object bth-schedule-rule" data-schedule-rule><div class="bth-object-head"><b>Правило графіка</b><button type="button" data-remove>×</button></div><div class="bth-fields bth-fields-3"><label>З<input type="time" data-rule-field="start" value="${escapeHtml(rule.start || '09:00')}"></label><label>До<input type="time" data-rule-field="end" value="${escapeHtml(rule.end || '18:00')}"></label><label>Сценарій<select data-rule-field="scenarioName">${scenarioOptions(scenarioItems, rule.scenarioName)}</select></label></div><div class="bth-days">${SCHEDULE_DAYS.map(day => `<label class="bth-checkbox"><input type="checkbox" data-rule-day="${day.value}" ${days.includes(day.value) ? 'checked' : ''}>${day.label}</label>`).join('')}</div></div>`;
+    const allDay = Boolean(rule.allDay) || clean(rule.rule).startsWith('*,');
+    return `<div class="bth-object bth-schedule-rule" data-schedule-rule><div class="bth-object-head"><b>Правило графіка</b><button type="button" data-remove>×</button></div><label class="bth-checkbox"><input type="checkbox" data-rule-field="allDay" ${allDay ? 'checked' : ''}>Весь день</label><div class="bth-fields bth-fields-3" data-rule-time><label>З<input type="time" data-rule-field="start" value="${escapeHtml(rule.start || '09:00')}"></label><label>До<input type="time" data-rule-field="end" value="${escapeHtml(rule.end || '18:00')}"></label><label>Сценарій<select data-rule-field="scenarioName">${scenarioOptions(scenarioItems, rule.scenarioName)}</select></label></div><div class="bth-days">${SCHEDULE_DAYS.map(day => `<label class="bth-checkbox"><input type="checkbox" data-rule-day="${day.value}" ${days.includes(day.value) ? 'checked' : ''}>${day.label}</label>`).join('')}</div></div>`;
   }
 
   function renderScheduleCard(item = {}, context = {}) {

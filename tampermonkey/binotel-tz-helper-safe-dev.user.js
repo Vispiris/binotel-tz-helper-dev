@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.15.0-dev
+// @version      0.15.1-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -20,7 +20,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.0-dev';
+  const SCRIPT_VERSION = '0.15.1-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -345,6 +345,10 @@
 
   function digitsOnly(value) {
     return String(value || '').replace(/\D+/g, '');
+  }
+
+  function isValidEndpointNumber(value) {
+    return /^[1-9]\d{2,}$/.test(clean(value));
   }
 
   function visibleField(field) {
@@ -1004,8 +1008,16 @@
       throw new Error('Оберіть регіон або поставте галку "регіон не важливий".');
     }
 
-    if (!getBlockState(draft, 'endpoints').ignored && (draft.endpointRows || []).length && (!clean(draft.endpointsFirstLine) || !clean(draft.endpointsCount))) {
-      throw new Error('Блок 2: поточний виконавець додає лише послідовні ВЛ. Непослідовні номери познач «Ігнорувати» та внеси вручну.');
+    if (!getBlockState(draft, 'endpoints').ignored) {
+      const endpointNumbers = (draft.endpointRows || []).map(item => clean(item.number)).filter(Boolean);
+      const invalidEndpointNumbers = endpointNumbers.filter(number => !isValidEndpointNumber(number));
+      if (invalidEndpointNumbers.length) {
+        throw new Error(`Блок 2: некоректні ВЛ: ${[...new Set(invalidEndpointNumbers)].join(', ')}. Дозволені лише цифри, номер має починатися від 100, без початкових нулів.`);
+      }
+      const duplicateEndpointNumbers = endpointNumbers.filter((number, index) => endpointNumbers.indexOf(number) !== index);
+      if (duplicateEndpointNumbers.length) {
+        throw new Error(`Блок 2: ВЛ повторюються: ${[...new Set(duplicateEndpointNumbers)].join(', ')}.`);
+      }
     }
 
     const unknownVoiceKeys = getBlockState(draft, 'voiceMessages').ignored ? [] : normalizeLineList(draft.standardVoiceMessages)
@@ -1222,7 +1234,8 @@
 
   function renderScheduleRule(rule = {}, scenarioItems = []) {
     const days = normalizeLineList(rule.days || 'mon,tue,wed,thu,fri');
-    return `<div class="bth-object bth-schedule-rule" data-schedule-rule><div class="bth-object-head"><b>Правило графіка</b><button type="button" data-remove>×</button></div><div class="bth-fields bth-fields-3"><label>З<input type="time" data-rule-field="start" value="${escapeHtml(rule.start || '09:00')}"></label><label>До<input type="time" data-rule-field="end" value="${escapeHtml(rule.end || '18:00')}"></label><label>Сценарій<select data-rule-field="scenarioName">${scenarioOptions(scenarioItems, rule.scenarioName)}</select></label></div><div class="bth-days">${SCHEDULE_DAYS.map(day => `<label class="bth-checkbox"><input type="checkbox" data-rule-day="${day.value}" ${days.includes(day.value) ? 'checked' : ''}>${day.label}</label>`).join('')}</div></div>`;
+    const allDay = Boolean(rule.allDay) || clean(rule.rule).startsWith('*,');
+    return `<div class="bth-object bth-schedule-rule" data-schedule-rule><div class="bth-object-head"><b>Правило графіка</b><button type="button" data-remove>×</button></div><label class="bth-checkbox"><input type="checkbox" data-rule-field="allDay" ${allDay ? 'checked' : ''}>Весь день</label><div class="bth-fields bth-fields-3" data-rule-time><label>З<input type="time" data-rule-field="start" value="${escapeHtml(rule.start || '09:00')}"></label><label>До<input type="time" data-rule-field="end" value="${escapeHtml(rule.end || '18:00')}"></label><label>Сценарій<select data-rule-field="scenarioName">${scenarioOptions(scenarioItems, rule.scenarioName)}</select></label></div><div class="bth-days">${SCHEDULE_DAYS.map(day => `<label class="bth-checkbox"><input type="checkbox" data-rule-day="${day.value}" ${days.includes(day.value) ? 'checked' : ''}>${day.label}</label>`).join('')}</div></div>`;
   }
 
   function renderScheduleCard(item = {}, context = {}) {
@@ -1416,28 +1429,18 @@
 
   async function applyEndpoints() {
     const draft = loadDraft();
-    const firstLine = clean(draft.endpointsFirstLine);
-    const countLines = clean(draft.endpointsCount);
     const flow = loadFlow() || {};
     const index = Number(flow.index || 0);
+    const requestedLines = (draft.endpointRows || []).map(item => clean(item.number)).filter(Boolean);
 
-    if (!firstLine && !countLines) {
+    if (!requestedLines.length) {
       saveFlow({ stage: 'ringGroups', index: 0 });
       await runAutomaticFlow();
       return;
     }
 
-    if (!firstLine || !countLines) {
-      throw new Error('Для ліній потрібно вказати стартову ВЛ і кількість.');
-    }
-
-    const firstLineNumber = Number(firstLine);
-    const countLinesNumber = Number(countLines);
-    if (!Number.isInteger(firstLineNumber) || !Number.isInteger(countLinesNumber) || countLinesNumber < 1) {
-      throw new Error('Стартова ВЛ і кількість мають бути додатними цілими числами.');
-    }
-
-    const requestedLines = Array.from({ length: countLinesNumber }, (_, offset) => String(firstLineNumber + offset));
+    const invalidLines = requestedLines.filter(line => !isValidEndpointNumber(line));
+    if (invalidLines.length) throw new Error(`Некоректні ВЛ: ${[...new Set(invalidLines)].join(', ')}. Мінімальний номер — 100, початкові нулі заборонені.`);
     if (index >= requestedLines.length) {
       saveFlow({ stage: 'ringGroups', index: 0, endpointAction: '' });
       await runAutomaticFlow();
@@ -1494,7 +1497,6 @@
       throw new Error(`Не знайшов кнопку збереження ВЛ ${line}.`);
     }
   }
-
   function findRingGroupEditButton(groupNumber) {
     const rows = $all('tr');
     const target = clean(groupNumber);
@@ -3287,6 +3289,7 @@
 
   function makeScheduleRuleString(rule) {
     const days = normalizeLineList(rule.days).join(',');
+    if (rule.allDay) return `*,${days || '*'},*,*`;
     return `${clean(rule.start)}-${clean(rule.end)},${days || '*'},*,*`;
   }
 
@@ -3297,6 +3300,7 @@
       const rules = $all('[data-schedule-rule]', card).map(rule => {
         const values = {};
         $all('[data-rule-field]', rule).forEach(field => { values[field.dataset.ruleField] = field.value; });
+        values.allDay = Boolean($('[data-rule-field="allDay"]', rule)?.checked);
         values.days = $all('[data-rule-day]:checked', rule).map(field => field.dataset.ruleDay);
         values.rule = makeScheduleRuleString(values);
         return values;
@@ -3330,7 +3334,6 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-
   function parseCsv(text) {
     const rows = [];
     let row = [];
@@ -3472,7 +3475,7 @@
   function expandTzNumbers(value) {
     const result = [];
     String(value || '').split(/[,;\n]+/).map(clean).filter(Boolean).forEach(part => {
-      const range = part.match(/^(\d{2,4})\s*[-–—]\s*(\d{2,4})$/);
+      const range = part.match(/^(\d{3,})\s*[-–—]\s*(\d{3,})$/);
       if (range) {
         const first = Number(range[1]);
         const last = Number(range[2]);
@@ -3481,7 +3484,7 @@
           return;
         }
       }
-      const direct = part.match(/^\d{2,4}$/);
+      const direct = part.match(/^\d{3,}$/);
       if (direct) result.push(direct[0]);
     });
     return [...new Set(result)];
@@ -3758,7 +3761,7 @@
             pendingTargetType = '';
             continue;
           }
-          const call = value.match(/(?:дзвінок|виклик)\D{0,15}(\d{2,4})/i);
+          const call = value.match(/(?:дзвінок|виклик)\D{0,15}(\d{3,})/i);
           if (call) {
             const target = call[1];
             const type = patch.ringGroupItems.some(item => clean(item.number) === target) ? 'ringGroup' : 'endpoint';
@@ -3777,7 +3780,7 @@
             pendingTargetIndex = -1;
             continue;
           }
-          if (pendingTargetType && /^\d{2,4}$/.test(digitsOnly(value))) {
+          if (pendingTargetType && /^\d{3,}$/.test(digitsOnly(value))) {
             actions.push({ type: pendingTargetType, target: digitsOnly(value), timeout: '40' });
             pendingTargetIndex = actions.length - 1;
             pendingTargetType = '';
@@ -3824,7 +3827,7 @@
             return;
           }
           if (/вихідн|выходн/.test(normalize(value)) && days.length && weekend) {
-            rules.push({ start: '00:00', end: '23:59', days, scenarioName: weekend.name });
+            rules.push({ start: '', end: '', allDay: true, days, scenarioName: weekend.name, rule: `*,${days.join(',')},*,*` });
           }
         });
       }
@@ -3932,6 +3935,11 @@
       if (custom) custom.style.display = always ? 'none' : '';
       if (label) label.textContent = always ? 'Сценарій 24/7' : 'Сценарій для решти часу';
     };
+    const refreshScheduleRuleTime = rule => {
+      if (!rule) return;
+      const allDay = Boolean($('[data-rule-field="allDay"]', rule)?.checked);
+      $all('[data-rule-time] input[type="time"]', rule).forEach(field => { field.disabled = allDay; });
+    };
     const refreshScheduleReferences = () => {
       const scenarios = collectScenarioCards(modal);
       $all('[data-rule-field="scenarioName"], [data-schedule-field="fallbackScenarioName"]', modal).forEach(select => {
@@ -3965,6 +3973,7 @@
     };
     $all('[data-item="endpoint"]', modal).forEach(refreshAccessFields);
     $all('[data-schedule-card]', modal).forEach(refreshScheduleMode);
+    $all('[data-schedule-rule]', modal).forEach(refreshScheduleRuleTime);
     modal.addEventListener('input', event => {
       const block = event.target.closest('[data-block]');
       if (!block || event.target.matches('[data-ignore-block]')) return;
@@ -3981,6 +3990,7 @@
       if (event.target.matches('[data-item-field="type"]')) updateScenarioActionVisibility(event.target.closest('.bth-scenario-action'));
       if (event.target.matches('[data-item-field="createAccess"]')) refreshAccessFields(event.target.closest('[data-item="endpoint"]'));
       if (event.target.matches('[data-schedule-field="mode"]')) refreshScheduleMode(event.target.closest('[data-schedule-card]'));
+      if (event.target.matches('[data-rule-field="allDay"]')) refreshScheduleRuleTime(event.target.closest('[data-schedule-rule]'));
       if (event.target.matches('[data-ignore-block]')) event.target.closest('[data-block]')?.classList.toggle('is-ignored', event.target.checked);
       refreshRunButton();
     });
@@ -4000,6 +4010,7 @@
         const card = event.target.closest('[data-schedule-card]');
         const scenarios = collectScenarioCards(modal);
         $('[data-schedule-rules]', card).insertAdjacentHTML('beforeend', renderScheduleRule({}, scenarios));
+        refreshScheduleRuleTime($('[data-schedule-rules]', card).lastElementChild);
         return;
       }
       const add = event.target.closest('[data-add]');
@@ -4257,6 +4268,8 @@
       feedbackVoicePath,
       getScenarioSpecs,
       validateDraft,
+      isValidEndpointNumber,
+      makeScheduleRuleString,
     };
   } else {
     boot();

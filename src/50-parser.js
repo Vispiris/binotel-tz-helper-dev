@@ -139,7 +139,7 @@
   function expandTzNumbers(value) {
     const result = [];
     String(value || '').split(/[,;\n]+/).map(clean).filter(Boolean).forEach(part => {
-      const range = part.match(/^(\d{2,4})\s*[-–—]\s*(\d{2,4})$/);
+      const range = part.match(/^(\d{3,})\s*[-–—]\s*(\d{3,})$/);
       if (range) {
         const first = Number(range[1]);
         const last = Number(range[2]);
@@ -148,7 +148,7 @@
           return;
         }
       }
-      const direct = part.match(/^\d{2,4}$/);
+      const direct = part.match(/^\d{3,}$/);
       if (direct) result.push(direct[0]);
     });
     return [...new Set(result)];
@@ -425,7 +425,7 @@
             pendingTargetType = '';
             continue;
           }
-          const call = value.match(/(?:дзвінок|виклик)\D{0,15}(\d{2,4})/i);
+          const call = value.match(/(?:дзвінок|виклик)\D{0,15}(\d{3,})/i);
           if (call) {
             const target = call[1];
             const type = patch.ringGroupItems.some(item => clean(item.number) === target) ? 'ringGroup' : 'endpoint';
@@ -444,7 +444,7 @@
             pendingTargetIndex = -1;
             continue;
           }
-          if (pendingTargetType && /^\d{2,4}$/.test(digitsOnly(value))) {
+          if (pendingTargetType && /^\d{3,}$/.test(digitsOnly(value))) {
             actions.push({ type: pendingTargetType, target: digitsOnly(value), timeout: '40' });
             pendingTargetIndex = actions.length - 1;
             pendingTargetType = '';
@@ -491,7 +491,7 @@
             return;
           }
           if (/вихідн|выходн/.test(normalize(value)) && days.length && weekend) {
-            rules.push({ start: '00:00', end: '23:59', days, scenarioName: weekend.name });
+            rules.push({ start: '', end: '', allDay: true, days, scenarioName: weekend.name, rule: `*,${days.join(',')},*,*` });
           }
         });
       }

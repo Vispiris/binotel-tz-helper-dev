@@ -23,6 +23,11 @@
       if (custom) custom.style.display = always ? 'none' : '';
       if (label) label.textContent = always ? 'Сценарій 24/7' : 'Сценарій для решти часу';
     };
+    const refreshScheduleRuleTime = rule => {
+      if (!rule) return;
+      const allDay = Boolean($('[data-rule-field="allDay"]', rule)?.checked);
+      $all('[data-rule-time] input[type="time"]', rule).forEach(field => { field.disabled = allDay; });
+    };
     const refreshScheduleReferences = () => {
       const scenarios = collectScenarioCards(modal);
       $all('[data-rule-field="scenarioName"], [data-schedule-field="fallbackScenarioName"]', modal).forEach(select => {
@@ -56,6 +61,7 @@
     };
     $all('[data-item="endpoint"]', modal).forEach(refreshAccessFields);
     $all('[data-schedule-card]', modal).forEach(refreshScheduleMode);
+    $all('[data-schedule-rule]', modal).forEach(refreshScheduleRuleTime);
     modal.addEventListener('input', event => {
       const block = event.target.closest('[data-block]');
       if (!block || event.target.matches('[data-ignore-block]')) return;
@@ -72,6 +78,7 @@
       if (event.target.matches('[data-item-field="type"]')) updateScenarioActionVisibility(event.target.closest('.bth-scenario-action'));
       if (event.target.matches('[data-item-field="createAccess"]')) refreshAccessFields(event.target.closest('[data-item="endpoint"]'));
       if (event.target.matches('[data-schedule-field="mode"]')) refreshScheduleMode(event.target.closest('[data-schedule-card]'));
+      if (event.target.matches('[data-rule-field="allDay"]')) refreshScheduleRuleTime(event.target.closest('[data-schedule-rule]'));
       if (event.target.matches('[data-ignore-block]')) event.target.closest('[data-block]')?.classList.toggle('is-ignored', event.target.checked);
       refreshRunButton();
     });
@@ -91,6 +98,7 @@
         const card = event.target.closest('[data-schedule-card]');
         const scenarios = collectScenarioCards(modal);
         $('[data-schedule-rules]', card).insertAdjacentHTML('beforeend', renderScheduleRule({}, scenarios));
+        refreshScheduleRuleTime($('[data-schedule-rules]', card).lastElementChild);
         return;
       }
       const add = event.target.closest('[data-add]');

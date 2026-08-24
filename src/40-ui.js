@@ -196,6 +196,7 @@
 
   function makeScheduleRuleString(rule) {
     const days = normalizeLineList(rule.days).join(',');
+    if (rule.allDay) return `*,${days || '*'},*,*`;
     return `${clean(rule.start)}-${clean(rule.end)},${days || '*'},*,*`;
   }
 
@@ -206,6 +207,7 @@
       const rules = $all('[data-schedule-rule]', card).map(rule => {
         const values = {};
         $all('[data-rule-field]', rule).forEach(field => { values[field.dataset.ruleField] = field.value; });
+        values.allDay = Boolean($('[data-rule-field="allDay"]', rule)?.checked);
         values.days = $all('[data-rule-day]:checked', rule).map(field => field.dataset.ruleDay);
         values.rule = makeScheduleRuleString(values);
         return values;
@@ -239,4 +241,3 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-

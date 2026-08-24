@@ -37,6 +37,8 @@
       feedbackVoicePath,
       getScenarioSpecs,
       validateDraft,
+      isValidEndpointNumber,
+      makeScheduleRuleString,
     };
   } else {
     boot();

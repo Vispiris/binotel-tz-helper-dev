@@ -1,27 +1,17 @@
   async function applyEndpoints() {
     const draft = loadDraft();
-    const firstLine = clean(draft.endpointsFirstLine);
-    const countLines = clean(draft.endpointsCount);
     const flow = loadFlow() || {};
     const index = Number(flow.index || 0);
+    const requestedLines = (draft.endpointRows || []).map(item => clean(item.number)).filter(Boolean);
 
-    if (!firstLine && !countLines) {
+    if (!requestedLines.length) {
       saveFlow({ stage: 'ringGroups', index: 0 });
       await runAutomaticFlow();
       return;
     }
 
-    if (!firstLine || !countLines) {
-      throw new Error('Для ліній потрібно вказати стартову ВЛ і кількість.');
-    }
-
-    const firstLineNumber = Number(firstLine);
-    const countLinesNumber = Number(countLines);
-    if (!Number.isInteger(firstLineNumber) || !Number.isInteger(countLinesNumber) || countLinesNumber < 1) {
-      throw new Error('Стартова ВЛ і кількість мають бути додатними цілими числами.');
-    }
-
-    const requestedLines = Array.from({ length: countLinesNumber }, (_, offset) => String(firstLineNumber + offset));
+    const invalidLines = requestedLines.filter(line => !isValidEndpointNumber(line));
+    if (invalidLines.length) throw new Error(`Некоректні ВЛ: ${[...new Set(invalidLines)].join(', ')}. Мінімальний номер — 100, початкові нулі заборонені.`);
     if (index >= requestedLines.length) {
       saveFlow({ stage: 'ringGroups', index: 0, endpointAction: '' });
       await runAutomaticFlow();
@@ -78,4 +68,3 @@
       throw new Error(`Не знайшов кнопку збереження ВЛ ${line}.`);
     }
   }
-
