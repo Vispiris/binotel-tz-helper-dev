@@ -16,7 +16,7 @@ const output = fs.readFileSync(path.join(root, 'tampermonkey', 'binotel-tz-helpe
 
 assert.equal(output, expected, 'userscript must be the exact concatenation of source modules');
 assert.equal((output.match(/==UserScript==/g) || []).length, 1);
-assert.match(output, /@version\s+0\.15\.2-dev/);
+assert.match(output, /@version\s+0\.15\.3-dev/);
 assert.match(output, /async function applyFeedback\(\)/);
 assert.match(output, /stage: 'feedback'/);
 assert.doesNotMatch(output, /(?:companyID|showProjectID)\s*[:=]\s*['"](?:10689|101982)['"]/);

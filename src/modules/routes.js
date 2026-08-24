@@ -359,13 +359,15 @@
       return;
     }
     const spec = specs[scheduleIndex];
+    const temporaryMap = getTemporaryMap();
+    const incomingNumbers = [...new Set(spec.incomingNumbers.flatMap(number => [clean(number), clean(temporaryMap[clean(number)])]).filter(Boolean))];
     const incomingIndex = Number(flow.incomingIndex || 0);
-    if (incomingIndex >= spec.incomingNumbers.length) {
+    if (incomingIndex >= incomingNumbers.length) {
       saveFlow({ stage: 'schedule', scheduleIndex: scheduleIndex + 1, incomingIndex: 0, scheduleAction: '', numberBindAction: '' });
       window.location.href = buildPanelUrl(CONFIG.routesModule);
       return;
     }
-    const number = clean(spec.incomingNumbers[incomingIndex]);
+    const number = clean(incomingNumbers[incomingIndex]);
     const params = getParams();
     const isEdit = getModule() === CONFIG.pbxNumbersModule && params.get('action') === 'edit';
     if (getModule() !== CONFIG.pbxNumbersModule) {

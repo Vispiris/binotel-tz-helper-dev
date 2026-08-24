@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.15.2-dev
+// @version      0.15.3-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -20,7 +20,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.2-dev';
+  const SCRIPT_VERSION = '0.15.3-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -1022,6 +1022,30 @@
       }
     }
 
+    const endpointNumberSet = new Set(getBlockState(draft, 'endpoints').ignored
+      ? []
+      : legacyEndpointRows(draft).map(item => clean(item.number)).filter(Boolean));
+    const ringGroups = getBlockState(draft, 'ringGroups').ignored ? [] : getRingGroupItems(draft.ringGroupsRows);
+    const ringGroupNumberSet = new Set(ringGroups.map(item => clean(item.number)).filter(Boolean));
+    ringGroups.forEach(group => {
+      const missing = normalizeLineList(group.endpointLines).filter(number => !endpointNumberSet.has(number));
+      if (missing.length) throw new Error(`Блок 3: група ${clean(group.number) || 'без номера'} містить ВЛ, яких немає у блоці 2: ${missing.join(', ')}.`);
+    });
+
+    const gsmNumbers = getBlockState(draft, 'gsmNumbers').ignored ? [] : getDraftGsmNumberItems(draft);
+    const invalidGsmNumbers = gsmNumbers.map(item => clean(item.number)).filter(number => !/^(?:0\d{9}|38\d{10})$/.test(number));
+    if (invalidGsmNumbers.length) throw new Error(`Блок 4: некоректні телефонні номери: ${invalidGsmNumbers.join(', ')}.`);
+    const duplicateGsmNumbers = gsmNumbers.map(item => clean(item.number)).filter((number, index, items) => items.indexOf(number) !== index);
+    if (duplicateGsmNumbers.length) throw new Error(`Блок 4: номери повторюються: ${[...new Set(duplicateGsmNumbers)].join(', ')}.`);
+    const gsmNumberSet = new Set(gsmNumbers.map(item => clean(item.number)).filter(Boolean));
+    const departments = getBlockState(draft, 'departments').ignored ? [] : getDepartmentItems(draft.departmentsRows);
+    departments.forEach(department => {
+      const missingEndpoints = department.endpoints.filter(number => !endpointNumberSet.has(number));
+      if (missingEndpoints.length) throw new Error(`Блок 5: відділ "${department.name}" містить ВЛ, яких немає у блоці 2: ${missingEndpoints.join(', ')}.`);
+      const missingNumbers = department.phoneNumbers.filter(number => !gsmNumberSet.has(number));
+      if (missingNumbers.length) throw new Error(`Блок 5: відділ "${department.name}" містить номери, яких немає у блоці 4: ${missingNumbers.join(', ')}.`);
+    });
+
     const unknownVoiceKeys = getBlockState(draft, 'voiceMessages').ignored ? [] : normalizeLineList(draft.standardVoiceMessages)
       .filter(key => !STANDARD_UA_VOICE[key]);
     if (unknownVoiceKeys.length) {
@@ -1048,6 +1072,12 @@
         if (action.type !== 'voice' && (!/^\d+$/.test(action.target) || !/^\d+$/.test(action.timeout) || Number(action.timeout) < 1)) {
           throw new Error(`Сценарій "${scenario.name}": для ${action.type} потрібні цифровий номер і додатний таймаут.`);
         }
+        if (action.type === 'endpoint' && !endpointNumberSet.has(clean(action.target))) {
+          throw new Error(`Сценарій "${scenario.name}": ВЛ ${action.target} відсутня у блоці 2.`);
+        }
+        if (action.type === 'ringGroup' && !ringGroupNumberSet.has(clean(action.target))) {
+          throw new Error(`Сценарій "${scenario.name}": група ${action.target} відсутня у блоці 3.`);
+        }
       });
       if (scenario.feedbackName && !feedbackNames.has(normalize(scenario.feedbackName))) {
         throw new Error(`Сценарій "${scenario.name}": Feedback-об’єкт "${scenario.feedbackName}" відсутній у блоці 8.1.`);
@@ -1058,8 +1088,14 @@
     schedules.forEach(schedule => {
       if (!schedule.name) throw new Error('Блок 7: у кожного графіка має бути назва.');
       if (!schedule.rules.length) throw new Error(`Графік "${schedule.name}" не має правил.`);
+      if (!schedule.incomingNumbers.length) throw new Error(`Графік "${schedule.name}": не вибрано жодного вхідного номера.`);
+      const unknownIncoming = schedule.incomingNumbers.filter(number => !gsmNumberSet.has(number));
+      if (unknownIncoming.length) throw new Error(`Графік "${schedule.name}": вхідні номери відсутні у блоці 4: ${unknownIncoming.join(', ')}.`);
       schedule.rules.forEach(rule => {
         if (!scenarioNames.has(rule.scenarioName)) throw new Error(`Графік "${schedule.name}": сценарій "${rule.scenarioName || '—'}" не знайдено у конструкторі.`);
+        if (rule.rule !== 'Все другое время' && !/^(?:\*|\d{2}:\d{2}-\d{2}:\d{2}),(?:mon|tue|wed|thu|fri|sat|sun)(?:,(?:mon|tue|wed|thu|fri|sat|sun))*,\*,\*$/.test(rule.rule)) {
+          throw new Error(`Графік "${schedule.name}": некоректне правило "${rule.rule || 'порожнє'}".`);
+        }
       });
     });
 
@@ -1166,6 +1202,8 @@
       normalizeLineList(item.endpoints).join(', '),
     ].join('\n')).join('\n\n');
     draft.gsmNumbersRows = (draft.gsmNumberItems || []).map(item => [clean(item.number), clean(item.name)].filter(Boolean).join('\n')).join('\n\n');
+    draft.createTemporaryNumbers = (draft.gsmNumberItems || []).some(item => item.createTemporary);
+    draft.externallyProvisionedNumbers = (draft.gsmNumberItems || []).filter(item => item.operatorDependency).map(item => clean(item.number)).filter(Boolean).join(', ');
     draft.departmentsRows = (draft.departmentItems || []).map(item => [
       clean(item.name),
       normalizeLineList(item.phoneNumbers).join(', '),
@@ -1396,7 +1434,7 @@
       findInputByLabel('Адрес технического задания') ||
       findInputByLabel('Адрес технічного завдання') ||
       getField('input[name*="technical" i], input[name*="tz" i], input[name*="task" i]');
-    setFieldValue(tzUrlField, draft.tzUrl);
+    if (!tzUrlField || !setFieldValue(tzUrlField, draft.tzUrl)) throw new Error('Не вдалося заповнити посилання на ТЗ у параметрах компанії.');
 
     const tariffField =
       findInputByLabel('Пакет') ||
@@ -1409,26 +1447,30 @@
         : findSelectByOptionText(draft.tariff);
     if (tariffSelect) {
       const changed = setSelectValue(tariffSelect, draft.tariff);
-      log(changed ? `Пакет встановлено: ${draft.tariff}.` : `Не знайшов пакет у списку: ${draft.tariff}.`, changed ? 'success' : 'warn');
+      if (!changed) throw new Error(`Не знайшов пакет у списку: ${draft.tariff}.`);
+      log(`Пакет встановлено: ${draft.tariff}.`, 'success');
     } else {
-      log('Не знайшов поле "Пакет/Тариф".', 'warn');
+      throw new Error('Не знайшов поле "Пакет/Тариф".');
     }
 
     const languageField =
       findInputByLabel('Язык в MyBusiness') ||
       findInputByLabel('Мова в MyBusiness') ||
       getField('select[name*="language" i], select[name*="lang" i]');
-    if (languageField && languageField.tagName === 'SELECT') setSelectValue(languageField, draft.language);
+    if (!languageField || languageField.tagName !== 'SELECT' || !setSelectValue(languageField, draft.language)) {
+      throw new Error(`Не вдалося встановити мову MyBusiness: ${draft.language}.`);
+    }
 
     const timezoneField =
       findInputByLabel('Часовой пояс') ||
       findInputByLabel('Часовий пояс') ||
       getField('select[name*="timezone" i], select[name*="timeZone" i]');
-    if (timezoneField && timezoneField.tagName === 'SELECT') setSelectValue(timezoneField, draft.timezone);
+    if (!timezoneField || timezoneField.tagName !== 'SELECT' || !setSelectValue(timezoneField, draft.timezone)) {
+      throw new Error(`Не вдалося встановити часовий пояс: ${draft.timezone}.`);
+    }
 
     await clickSubmitAndContinue('Параметри компанії збережено.', 'endpoints', 0);
   }
-
   async function applyEndpoints() {
     const draft = loadDraft();
     const flow = loadFlow() || {};
@@ -1468,10 +1510,15 @@
       }));
 
       if (inTargetProject) {
+        if (flow.endpointAction === 'verifyAfterCreate') log(`ВЛ ${line} створено та перевірено.`, 'success');
         log(`ВЛ ${line} вже існує саме у проєкті ${draft.projectId} — перевірено, пропускаю.`, 'success');
         saveFlow({ stage: 'endpoints', index: index + 1, endpointAction: '' });
         await runAutomaticFlow();
         return;
+      }
+
+      if (flow.endpointAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження ВЛ ${line} не знайдено у проєкті ${draft.projectId}. Повторне створення заборонене.`);
       }
 
       saveFlow({ stage: 'endpoints', index, endpointAction: 'create' });
@@ -1493,7 +1540,7 @@
       throw new Error(`Не зміг вибрати проєкт ${draft.projectId} для ВЛ ${line}.`);
     }
 
-    saveFlow({ stage: 'endpoints', index: index + 1, endpointAction: '' });
+    saveFlow({ stage: 'endpoints', index, endpointAction: 'verifyAfterCreate' });
     log(`Зберігаю ВЛ ${line} у проєкті ${draft.projectId}.`, 'info');
     if (!clickSubmitNear(numberField, ['Сохранить', 'Зберегти'])) {
       throw new Error(`Не знайшов кнопку збереження ВЛ ${line}.`);
@@ -1701,10 +1748,15 @@
 
       const existence = getRingGroupExistence(groupNumber, groupName, draft.projectId);
       if (existence.inTargetProject) {
+        if (flow.ringGroupAction === 'verifyAfterCreate') log(`Групу ${groupNumber} створено та перевірено.`, 'success');
         log(`Група ${groupNumber} / "${groupName}" вже існує у потрібному проєкті — пропускаю створення.`, 'success');
         saveFlow({ stage: 'ringGroups', index: index + 1, ringGroupAction: '' });
         await runAutomaticFlow();
         return;
+      }
+
+      if (flow.ringGroupAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження групу ${groupNumber} / "${groupName}" не знайдено. Повторне створення заборонене.`);
       }
 
       if (existence.exists) {
@@ -1739,22 +1791,15 @@
     }
 
     if (missing.length) {
-      log(`Не знайшов ВЛ для групи ${groupNumber}: ${missing.join(', ')}`, 'warn');
+      throw new Error(`Не знайшов ВЛ для групи ${groupNumber}: ${missing.join(', ')}. Групу не збережено.`);
     }
 
+    saveFlow({ stage: 'ringGroups', index, ringGroupAction: 'verifyAfterCreate' });
     const clicked = clickButtonByText(['Сохранить', 'Зберегти', 'Добавить', 'Додати']);
     if (!clicked) throw new Error('Не знайшов кнопку збереження/додавання групи.');
 
-    saveFlow({ stage: 'ringGroups', index: index + 1, ringGroupAction: '' });
     log(`Група ${groupNumber} збережена.`, 'success');
-    await sleep(1200);
-    await continueAfterRingGroupSave_();
   }
-
-  async function continueAfterRingGroupSave_() {
-    await runAutomaticFlow();
-  }
-
   function getVisibleWritableFields() {
     return $all('input[type="text"], input:not([type]), input[type="email"], textarea')
       .filter(visibleField)
@@ -1786,21 +1831,32 @@
 
     if (!isEditPage) {
       if (visibleRowExistsByTarget(item.number)) {
+        if (flow.gsmAction === 'verifyAfterCreate') log(`GSM номер ${item.number} створено та перевірено.`, 'success');
         log(`GSM номер ${item.number} вже існує — повторно не створюю.`, 'success');
         if (item.createTemporary && !getTemporaryMap()[item.number]) {
-          saveFlow({ stage: 'gsmTemporaryOpen', index, pendingRealNumber: item.number });
+          saveFlow({ stage: 'gsmTemporaryOpen', index, pendingRealNumber: item.number, gsmAction: '' });
         } else {
-          saveFlow({ stage: 'gsmNumbers', index: index + 1 });
+          saveFlow({ stage: 'gsmNumbers', index: index + 1, gsmAction: '' });
         }
         await runAutomaticFlow();
         return;
       }
 
+      if (flow.gsmAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження GSM номер ${item.number} не знайдено. Повторне створення заборонене.`);
+      }
+
+      saveFlow({ stage: 'gsmNumbers', index, gsmAction: 'create' });
       if (!clickButtonByText(['Додати', 'Добавить'])) {
         throw new Error('Не знайшов кнопку додавання GSM номера.');
       }
 
       log(`Відкриваю форму додавання GSM номера ${item.number}.`, 'info');
+      return;
+    }
+
+    if (flow.gsmAction !== 'create') {
+      window.location.href = buildPanelUrl(CONFIG.gsmPortsModule);
       return;
     }
 
@@ -1835,23 +1891,22 @@
       throw new Error(`Не зміг заповнити номер GSM: ${item.number}.`);
     }
     if (item.name) {
-      setFieldValue(nameField, item.name);
+      if (!nameField || !setFieldValue(nameField, item.name)) throw new Error(`Не вдалося заповнити назву GSM номера ${item.number}.`);
     }
-    setFieldValue(emailField, clean(item.email) || 'noemail');
+    if (!emailField || !setFieldValue(emailField, clean(item.email) || 'noemail')) throw new Error(`Не вдалося заповнити email GSM номера ${item.number}.`);
 
     if (serverField && serverField.tagName === 'SELECT') {
       const serverChanged = setSelectValue(serverField, 'rgsm0');
-      log(serverChanged ? 'GSM сервер встановлено: rgsm0.' : 'Не знайшов rgsm0 у списку GSM серверів.', serverChanged ? 'success' : 'warn');
+      if (!serverChanged) throw new Error('Не знайшов rgsm0 у списку GSM серверів. Номер не збережено.');
+      log('GSM сервер встановлено: rgsm0.', 'success');
     } else {
       log('Не знайшов поле GSM сервера. Перевір, чи rgsm0 виставився автоматично.', 'warn');
     }
 
-    const nextStage = item.createTemporary ? 'gsmTemporaryOpen' : 'gsmNumbers';
-    const nextIndex = item.createTemporary ? index : index + 1;
-
     saveFlow({
-      stage: nextStage,
-      index: nextIndex,
+      stage: 'gsmNumbers',
+      index,
+      gsmAction: 'verifyAfterCreate',
       pendingRealNumber: item.number,
       temporaryBefore: collectTemporaryNumbersFromPage(),
     });
@@ -1869,7 +1924,7 @@
     const realNumber = clean(flow.pendingRealNumber);
 
     if (!realNumber) {
-      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1 });
+      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1, gsmAction: '', pendingRealNumber: '' });
       await runAutomaticFlow();
       return;
     }
@@ -1889,10 +1944,7 @@
     });
 
     if (!clickButtonByTextWithTemporaryConfirm(['Добавить временный номер для ВАТС', 'Добавить временный', 'Додати тимчасовий', 'тимчасовий номер'])) {
-      log(`Не знайшов кнопку тимчасового номера для ${realNumber}. Йду далі без мапи тимчасового.`, 'warn');
-      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1 });
-      await runAutomaticFlow();
-      return;
+      throw new Error(`Не знайшов кнопку створення тимчасового номера для ${realNumber}.`);
     }
 
     log(`Створюю тимчасовий номер для ${realNumber}.`, 'info');
@@ -1917,18 +1969,18 @@
       rememberTemporaryNumber(realNumber, created);
       log(`Запам’ятав тимчасовий номер: ${realNumber} → ${created}.`, 'success');
     } else {
-      log(`Не зміг визначити новий тимчасовий номер для ${realNumber}. У відділ додам тільки основний номер.`, 'warn');
+      throw new Error(`Тимчасовий номер для ${realNumber} не знайдено після створення.`);
     }
 
     saveFlow({
       stage: 'gsmNumbers',
       index: Number(flow.index || 0) + 1,
+      gsmAction: '',
       pendingRealNumber: '',
       temporaryBefore: [],
     });
     await runAutomaticFlow();
   }
-
   async function applyDepartments() {
     const draft = loadDraft();
     const rows = getDepartmentItems(draft.departmentsRows);
@@ -1972,8 +2024,10 @@
       department.name
     );
 
+    const temporaryMap = getTemporaryMap();
+    const departmentPhoneNumbers = [...new Set(department.phoneNumbers.flatMap(number => [clean(number), clean(temporaryMap[clean(number)])]).filter(Boolean))];
     const targets = [
-      ...department.phoneNumbers,
+      ...departmentPhoneNumbers,
       ...department.endpoints,
     ].map(clean).filter(Boolean);
 
@@ -1988,11 +2042,10 @@
     });
 
     if (selected.length) log(`Для відділу "${department.name}" вибрано: ${selected.join(', ')}`, 'success');
-    if (missing.length) log(`Не знайшов для відділу "${department.name}": ${missing.join(', ')}`, 'warn');
+    if (missing.length) throw new Error(`Не знайшов для відділу "${department.name}": ${missing.join(', ')}. Відділ не збережено.`);
 
     await clickSubmitAndContinue(`Відділ "${department.name}" збережено.`, 'departments', index + 1);
   }
-
   function getRingGroupExistence(groupNumber, groupName, projectId) {
     const number = clean(groupNumber);
     const name = clean(groupName).toLowerCase();
@@ -2043,13 +2096,18 @@
     if (!item) throw new Error(`Невідомий стандартний голосовий файл: ${key}.`);
 
     if (standardVoiceMessageExists(item)) {
+      if (flow.voiceAction === 'verifyAfterAdd') log(`Голосове повідомлення додано та перевірено: ${item.label}.`, 'success');
       log(`Голосове повідомлення вже є: ${item.label}.`, 'success');
-      saveFlow({ stage: 'voiceMessages', index: index + 1 });
+      saveFlow({ stage: 'voiceMessages', index: index + 1, voiceAction: '' });
       await runAutomaticFlow();
       return;
     }
 
-    saveFlow({ stage: 'voiceMessages', index: index + 1 });
+    if (flow.voiceAction === 'verifyAfterAdd') {
+      throw new Error(`Після додавання голосове повідомлення не знайдено: ${item.label}. Повторне додавання заборонене.`);
+    }
+
+    saveFlow({ stage: 'voiceMessages', index, voiceAction: 'verifyAfterAdd' });
     const url = new URL(buildPanelUrl(CONFIG.voiceMessagesModule));
     url.searchParams.set('action', 'addStandardFile');
     url.searchParams.set('filePath', item.path);
@@ -2680,13 +2738,15 @@
       return;
     }
     const spec = specs[scheduleIndex];
+    const temporaryMap = getTemporaryMap();
+    const incomingNumbers = [...new Set(spec.incomingNumbers.flatMap(number => [clean(number), clean(temporaryMap[clean(number)])]).filter(Boolean))];
     const incomingIndex = Number(flow.incomingIndex || 0);
-    if (incomingIndex >= spec.incomingNumbers.length) {
+    if (incomingIndex >= incomingNumbers.length) {
       saveFlow({ stage: 'schedule', scheduleIndex: scheduleIndex + 1, incomingIndex: 0, scheduleAction: '', numberBindAction: '' });
       window.location.href = buildPanelUrl(CONFIG.routesModule);
       return;
     }
-    const number = clean(spec.incomingNumbers[incomingIndex]);
+    const number = clean(incomingNumbers[incomingIndex]);
     const params = getParams();
     const isEdit = getModule() === CONFIG.pbxNumbersModule && params.get('action') === 'edit';
     if (getModule() !== CONFIG.pbxNumbersModule) {
@@ -2786,6 +2846,7 @@
       if (actionTypes.has('ringGroup')) dependencies.push('ringGroups');
       if (actionTypes.has('voice')) dependencies.push('voiceMessages');
       if (getScenarioSpecs(draft).some(item => clean(item.feedbackName))) dependencies.push('feedback');
+      if (getScheduleSpecs(draft).some(item => item.incomingNumbers.length)) dependencies.push('gsmNumbers');
     }
     const dependency = [...new Set(dependencies)].find(id => getBlockState(draft, id).ignored || failed[id]);
     if (dependency) return `не виконана залежність «${TZ_BLOCKS.find(item => item.id === dependency)?.title || dependency}»`;
@@ -3574,14 +3635,14 @@
 
     const headEnd = section.numbers >= 0 ? section.numbers : Math.min(rows.length, 12);
     const headerRows = rows.slice(0, headEnd);
-    const tariff = headerRows.flat().find(cell => TARIFFS.some(item => normalize(item) === normalize(cell)));
+    const tariff = headerRows.flat().find(cell => TARIFFS.some(item => normalize(item).replace(/\s+/g, '') === normalize(cell).replace(/\s+/g, '')));
     const regionRow = findTzRow(rows, /^регіон$|\| регіон \|/, 0, headEnd);
     const languageRow = findTzRow(rows, /мова mybusiness/, 0, headEnd);
     const regionCell = regionRow >= 0 ? findTzCell(rows[regionRow], /^регіон$/) : -1;
     const languageCell = languageRow >= 0 ? findTzCell(rows[languageRow], /мова mybusiness/) : -1;
     const region = regionRow >= 0 ? nextTzValue(rows[regionRow], regionCell) : '';
     const language = languageRow >= 0 ? tzLanguageCode(nextTzValue(rows[languageRow], languageCell)) : '';
-    if (tariff) patch.tariff = TARIFFS.find(item => normalize(item) === normalize(tariff)) || tariff;
+    if (tariff) patch.tariff = TARIFFS.find(item => normalize(item).replace(/\s+/g, '') === normalize(tariff).replace(/\s+/g, '')) || tariff;
     if (region) patch.region = region;
     if (language) patch.language = language;
     patch.skipCompanyParams = false;
@@ -3592,21 +3653,29 @@
     const numberEnd = section.endpoints >= 0 ? section.endpoints : rows.length;
     const phoneRow = findTzRow(rows, /номери телефонів.*форматі/, section.numbers + 1, numberEnd);
     const phoneNameRow = findTzRow(rows, /підписати номер у лк як/, section.numbers + 1, numberEnd);
+    const phoneConnectionRow = findTzRow(rows, /дані для підключення номера/, section.numbers + 1, numberEnd);
     if (phoneRow >= 0) {
       const phoneLabelColumn = findTzCell(rows[phoneRow], /номери телефонів.*форматі/);
       rows[phoneRow].forEach((cell, column) => {
         if (column <= phoneLabelColumn) return;
-        extractTzPhones(cell).forEach(number => patch.gsmNumberItems.push({
-          number,
-          name: phoneNameRow >= 0 ? clean(rows[phoneNameRow][column]) : '',
-          email: '',
-          createTemporary: false,
-          operatorDependency: true,
-        }));
+        extractTzPhones(cell).forEach(number => {
+          const connection = clean(rows[phoneConnectionRow]?.[column]);
+          const rawName = phoneNameRow >= 0 ? clean(rows[phoneNameRow][column]) : '';
+          const name = rawName.length <= 80 && !/sip[-\s]?(логін|логин|парол)|безпека|безопасность|тип підключення|тип подключения/i.test(rawName) ? rawName : '';
+          patch.gsmNumberItems.push({
+            number,
+            name,
+            email: '',
+            createTemporary: /встановлен\S*\s+пізніше|буде\s+встановлен\S*\s+пізніше|установлен\S*\s+позже/i.test(connection),
+            operatorDependency: /оператор.*додає.*самостійно|оператор.*добавляет.*самостоятельно/i.test(connection),
+          });
+        });
       });
     }
     if (section.numbers < 0) issues.gsmNumbers = 'Не знайдено розділ 1 з номерами компанії.';
     else if (!patch.gsmNumberItems.length) issues.gsmNumbers = 'Розділ номерів знайдено, але жодного номера не розпізнано.';
+    patch.externallyProvisionedNumbers = patch.gsmNumberItems.filter(item => item.operatorDependency).map(item => item.number).join(', ');
+    patch.createTemporaryNumbers = patch.gsmNumberItems.some(item => item.createTemporary);
 
     const endpointEnd = section.departments >= 0 ? section.departments : rows.length;
     const endpointNumberRow = findTzRow(rows, /вкажіть нумерацію внутрішніх ліній/, section.endpoints + 1, endpointEnd);
@@ -3755,7 +3824,11 @@
           const value = clean(rows[index][column]);
           if (!value) continue;
           const rowContext = `${clean(rows[index]?.[0])} ${value}`;
-          const voiceKey = tzVoiceKey(rowContext);
+          let voiceKey = tzVoiceKey(rowContext);
+          if (/greeting-with-feedback-appeal/.test(voiceKey) && !feedbackSpeakerFromText(rowContext) && patch.feedbackItems.length === 1) {
+            const feedbackSpeaker = FEEDBACK_SPEAKERS[patch.feedbackItems[0].speaker];
+            if (feedbackSpeaker) voiceKey = `${feedbackSpeaker.voicePrefix}_greeting-with-feedback-appeal-v1`;
+          }
           if (/голосове повідомлення|привітання|feedback|фідбек/i.test(rowContext) && voiceKey) {
             actions.push({ type: 'voice', voiceKey });
             if (!/greeting-with-feedback-appeal/.test(voiceKey)) voiceKeys.add(voiceKey);
@@ -3804,7 +3877,7 @@
         patch.scenarioItems.push({
           key: `scenario-${patch.scenarioItems.length + 1}`,
           name,
-          type: /неробоч/.test(normalize(name)) ? 'offHours' : 'working',
+          type: /неробоч|вихідн|выходн|аварійн|аварийн/.test(normalize(name)) ? 'offHours' : 'working',
           feedbackName,
           actions,
           incomingNumbers,
@@ -4273,6 +4346,7 @@
       isValidEndpointNumber,
       makeScheduleRuleString,
       buildExecutionPlan,
+      applyStructuredCompatibility,
     };
   } else {
     boot();

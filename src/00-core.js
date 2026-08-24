@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.2-dev';
+  const SCRIPT_VERSION = '0.15.3-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -1003,6 +1003,30 @@
       }
     }
 
+    const endpointNumberSet = new Set(getBlockState(draft, 'endpoints').ignored
+      ? []
+      : legacyEndpointRows(draft).map(item => clean(item.number)).filter(Boolean));
+    const ringGroups = getBlockState(draft, 'ringGroups').ignored ? [] : getRingGroupItems(draft.ringGroupsRows);
+    const ringGroupNumberSet = new Set(ringGroups.map(item => clean(item.number)).filter(Boolean));
+    ringGroups.forEach(group => {
+      const missing = normalizeLineList(group.endpointLines).filter(number => !endpointNumberSet.has(number));
+      if (missing.length) throw new Error(`Блок 3: група ${clean(group.number) || 'без номера'} містить ВЛ, яких немає у блоці 2: ${missing.join(', ')}.`);
+    });
+
+    const gsmNumbers = getBlockState(draft, 'gsmNumbers').ignored ? [] : getDraftGsmNumberItems(draft);
+    const invalidGsmNumbers = gsmNumbers.map(item => clean(item.number)).filter(number => !/^(?:0\d{9}|38\d{10})$/.test(number));
+    if (invalidGsmNumbers.length) throw new Error(`Блок 4: некоректні телефонні номери: ${invalidGsmNumbers.join(', ')}.`);
+    const duplicateGsmNumbers = gsmNumbers.map(item => clean(item.number)).filter((number, index, items) => items.indexOf(number) !== index);
+    if (duplicateGsmNumbers.length) throw new Error(`Блок 4: номери повторюються: ${[...new Set(duplicateGsmNumbers)].join(', ')}.`);
+    const gsmNumberSet = new Set(gsmNumbers.map(item => clean(item.number)).filter(Boolean));
+    const departments = getBlockState(draft, 'departments').ignored ? [] : getDepartmentItems(draft.departmentsRows);
+    departments.forEach(department => {
+      const missingEndpoints = department.endpoints.filter(number => !endpointNumberSet.has(number));
+      if (missingEndpoints.length) throw new Error(`Блок 5: відділ "${department.name}" містить ВЛ, яких немає у блоці 2: ${missingEndpoints.join(', ')}.`);
+      const missingNumbers = department.phoneNumbers.filter(number => !gsmNumberSet.has(number));
+      if (missingNumbers.length) throw new Error(`Блок 5: відділ "${department.name}" містить номери, яких немає у блоці 4: ${missingNumbers.join(', ')}.`);
+    });
+
     const unknownVoiceKeys = getBlockState(draft, 'voiceMessages').ignored ? [] : normalizeLineList(draft.standardVoiceMessages)
       .filter(key => !STANDARD_UA_VOICE[key]);
     if (unknownVoiceKeys.length) {
@@ -1029,6 +1053,12 @@
         if (action.type !== 'voice' && (!/^\d+$/.test(action.target) || !/^\d+$/.test(action.timeout) || Number(action.timeout) < 1)) {
           throw new Error(`Сценарій "${scenario.name}": для ${action.type} потрібні цифровий номер і додатний таймаут.`);
         }
+        if (action.type === 'endpoint' && !endpointNumberSet.has(clean(action.target))) {
+          throw new Error(`Сценарій "${scenario.name}": ВЛ ${action.target} відсутня у блоці 2.`);
+        }
+        if (action.type === 'ringGroup' && !ringGroupNumberSet.has(clean(action.target))) {
+          throw new Error(`Сценарій "${scenario.name}": група ${action.target} відсутня у блоці 3.`);
+        }
       });
       if (scenario.feedbackName && !feedbackNames.has(normalize(scenario.feedbackName))) {
         throw new Error(`Сценарій "${scenario.name}": Feedback-об’єкт "${scenario.feedbackName}" відсутній у блоці 8.1.`);
@@ -1039,8 +1069,14 @@
     schedules.forEach(schedule => {
       if (!schedule.name) throw new Error('Блок 7: у кожного графіка має бути назва.');
       if (!schedule.rules.length) throw new Error(`Графік "${schedule.name}" не має правил.`);
+      if (!schedule.incomingNumbers.length) throw new Error(`Графік "${schedule.name}": не вибрано жодного вхідного номера.`);
+      const unknownIncoming = schedule.incomingNumbers.filter(number => !gsmNumberSet.has(number));
+      if (unknownIncoming.length) throw new Error(`Графік "${schedule.name}": вхідні номери відсутні у блоці 4: ${unknownIncoming.join(', ')}.`);
       schedule.rules.forEach(rule => {
         if (!scenarioNames.has(rule.scenarioName)) throw new Error(`Графік "${schedule.name}": сценарій "${rule.scenarioName || '—'}" не знайдено у конструкторі.`);
+        if (rule.rule !== 'Все другое время' && !/^(?:\*|\d{2}:\d{2}-\d{2}:\d{2}),(?:mon|tue|wed|thu|fri|sat|sun)(?:,(?:mon|tue|wed|thu|fri|sat|sun))*,\*,\*$/.test(rule.rule)) {
+          throw new Error(`Графік "${schedule.name}": некоректне правило "${rule.rule || 'порожнє'}".`);
+        }
       });
     });
 
@@ -1147,6 +1183,8 @@
       normalizeLineList(item.endpoints).join(', '),
     ].join('\n')).join('\n\n');
     draft.gsmNumbersRows = (draft.gsmNumberItems || []).map(item => [clean(item.number), clean(item.name)].filter(Boolean).join('\n')).join('\n\n');
+    draft.createTemporaryNumbers = (draft.gsmNumberItems || []).some(item => item.createTemporary);
+    draft.externallyProvisionedNumbers = (draft.gsmNumberItems || []).filter(item => item.operatorDependency).map(item => clean(item.number)).filter(Boolean).join(', ');
     draft.departmentsRows = (draft.departmentItems || []).map(item => [
       clean(item.name),
       normalizeLineList(item.phoneNumbers).join(', '),

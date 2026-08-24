@@ -32,6 +32,7 @@
       if (actionTypes.has('ringGroup')) dependencies.push('ringGroups');
       if (actionTypes.has('voice')) dependencies.push('voiceMessages');
       if (getScenarioSpecs(draft).some(item => clean(item.feedbackName))) dependencies.push('feedback');
+      if (getScheduleSpecs(draft).some(item => item.incomingNumbers.length)) dependencies.push('gsmNumbers');
     }
     const dependency = [...new Set(dependencies)].find(id => getBlockState(draft, id).ignored || failed[id]);
     if (dependency) return `не виконана залежність «${TZ_BLOCKS.find(item => item.id === dependency)?.title || dependency}»`;

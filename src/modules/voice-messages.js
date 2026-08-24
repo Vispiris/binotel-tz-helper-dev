@@ -48,13 +48,18 @@
     if (!item) throw new Error(`Невідомий стандартний голосовий файл: ${key}.`);
 
     if (standardVoiceMessageExists(item)) {
+      if (flow.voiceAction === 'verifyAfterAdd') log(`Голосове повідомлення додано та перевірено: ${item.label}.`, 'success');
       log(`Голосове повідомлення вже є: ${item.label}.`, 'success');
-      saveFlow({ stage: 'voiceMessages', index: index + 1 });
+      saveFlow({ stage: 'voiceMessages', index: index + 1, voiceAction: '' });
       await runAutomaticFlow();
       return;
     }
 
-    saveFlow({ stage: 'voiceMessages', index: index + 1 });
+    if (flow.voiceAction === 'verifyAfterAdd') {
+      throw new Error(`Після додавання голосове повідомлення не знайдено: ${item.label}. Повторне додавання заборонене.`);
+    }
+
+    saveFlow({ stage: 'voiceMessages', index, voiceAction: 'verifyAfterAdd' });
     const url = new URL(buildPanelUrl(CONFIG.voiceMessagesModule));
     url.searchParams.set('action', 'addStandardFile');
     url.searchParams.set('filePath', item.path);

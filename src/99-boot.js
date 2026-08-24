@@ -40,6 +40,7 @@
       isValidEndpointNumber,
       makeScheduleRuleString,
       buildExecutionPlan,
+      applyStructuredCompatibility,
     };
   } else {
     boot();

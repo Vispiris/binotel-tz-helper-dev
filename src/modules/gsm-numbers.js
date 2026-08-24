@@ -29,21 +29,32 @@
 
     if (!isEditPage) {
       if (visibleRowExistsByTarget(item.number)) {
+        if (flow.gsmAction === 'verifyAfterCreate') log(`GSM номер ${item.number} створено та перевірено.`, 'success');
         log(`GSM номер ${item.number} вже існує — повторно не створюю.`, 'success');
         if (item.createTemporary && !getTemporaryMap()[item.number]) {
-          saveFlow({ stage: 'gsmTemporaryOpen', index, pendingRealNumber: item.number });
+          saveFlow({ stage: 'gsmTemporaryOpen', index, pendingRealNumber: item.number, gsmAction: '' });
         } else {
-          saveFlow({ stage: 'gsmNumbers', index: index + 1 });
+          saveFlow({ stage: 'gsmNumbers', index: index + 1, gsmAction: '' });
         }
         await runAutomaticFlow();
         return;
       }
 
+      if (flow.gsmAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження GSM номер ${item.number} не знайдено. Повторне створення заборонене.`);
+      }
+
+      saveFlow({ stage: 'gsmNumbers', index, gsmAction: 'create' });
       if (!clickButtonByText(['Додати', 'Добавить'])) {
         throw new Error('Не знайшов кнопку додавання GSM номера.');
       }
 
       log(`Відкриваю форму додавання GSM номера ${item.number}.`, 'info');
+      return;
+    }
+
+    if (flow.gsmAction !== 'create') {
+      window.location.href = buildPanelUrl(CONFIG.gsmPortsModule);
       return;
     }
 
@@ -78,23 +89,22 @@
       throw new Error(`Не зміг заповнити номер GSM: ${item.number}.`);
     }
     if (item.name) {
-      setFieldValue(nameField, item.name);
+      if (!nameField || !setFieldValue(nameField, item.name)) throw new Error(`Не вдалося заповнити назву GSM номера ${item.number}.`);
     }
-    setFieldValue(emailField, clean(item.email) || 'noemail');
+    if (!emailField || !setFieldValue(emailField, clean(item.email) || 'noemail')) throw new Error(`Не вдалося заповнити email GSM номера ${item.number}.`);
 
     if (serverField && serverField.tagName === 'SELECT') {
       const serverChanged = setSelectValue(serverField, 'rgsm0');
-      log(serverChanged ? 'GSM сервер встановлено: rgsm0.' : 'Не знайшов rgsm0 у списку GSM серверів.', serverChanged ? 'success' : 'warn');
+      if (!serverChanged) throw new Error('Не знайшов rgsm0 у списку GSM серверів. Номер не збережено.');
+      log('GSM сервер встановлено: rgsm0.', 'success');
     } else {
       log('Не знайшов поле GSM сервера. Перевір, чи rgsm0 виставився автоматично.', 'warn');
     }
 
-    const nextStage = item.createTemporary ? 'gsmTemporaryOpen' : 'gsmNumbers';
-    const nextIndex = item.createTemporary ? index : index + 1;
-
     saveFlow({
-      stage: nextStage,
-      index: nextIndex,
+      stage: 'gsmNumbers',
+      index,
+      gsmAction: 'verifyAfterCreate',
       pendingRealNumber: item.number,
       temporaryBefore: collectTemporaryNumbersFromPage(),
     });
@@ -112,7 +122,7 @@
     const realNumber = clean(flow.pendingRealNumber);
 
     if (!realNumber) {
-      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1 });
+      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1, gsmAction: '', pendingRealNumber: '' });
       await runAutomaticFlow();
       return;
     }
@@ -132,10 +142,7 @@
     });
 
     if (!clickButtonByTextWithTemporaryConfirm(['Добавить временный номер для ВАТС', 'Добавить временный', 'Додати тимчасовий', 'тимчасовий номер'])) {
-      log(`Не знайшов кнопку тимчасового номера для ${realNumber}. Йду далі без мапи тимчасового.`, 'warn');
-      saveFlow({ stage: 'gsmNumbers', index: Number(flow.index || 0) + 1 });
-      await runAutomaticFlow();
-      return;
+      throw new Error(`Не знайшов кнопку створення тимчасового номера для ${realNumber}.`);
     }
 
     log(`Створюю тимчасовий номер для ${realNumber}.`, 'info');
@@ -160,15 +167,15 @@
       rememberTemporaryNumber(realNumber, created);
       log(`Запам’ятав тимчасовий номер: ${realNumber} → ${created}.`, 'success');
     } else {
-      log(`Не зміг визначити новий тимчасовий номер для ${realNumber}. У відділ додам тільки основний номер.`, 'warn');
+      throw new Error(`Тимчасовий номер для ${realNumber} не знайдено після створення.`);
     }
 
     saveFlow({
       stage: 'gsmNumbers',
       index: Number(flow.index || 0) + 1,
+      gsmAction: '',
       pendingRealNumber: '',
       temporaryBefore: [],
     });
     await runAutomaticFlow();
   }
-

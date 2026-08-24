@@ -14,6 +14,8 @@ const context = {
   setTimeout,
   clearTimeout,
 };
+context.location = { hostname: 'panel.binotel.com', pathname: '/', search: '?module=pbxScheme&companyID=10689&showProjectID=101982' };
+context.window = { location: context.location };
 context.globalThis = context;
 vm.runInNewContext(source, context, { filename: 'binotel-tz-helper-safe-dev.user.js' });
 
@@ -21,11 +23,12 @@ const api = context.__BINOTEL_TZ_HELPER_TEST_API__;
 assert.ok(api, 'test API should be exposed');
 
 const rows = [
-  ['Pro'],
+  ['Pro +'],
   ['Регіон', 'Україна'],
   ['Мова MyBusiness', 'Українська'],
   ['1. Номери компанії, які підключаємо до ВАТС'],
   ['Номери телефонів (у форматі 0931112233)', '0959999999'],
+  ['Дані для підключення номера', 'Підключення картки, яка буде встановлена пізніше'],
   ['Графік роботи'],
   ['', 'Пн-Сб:', 'Неділя:', 'Решта часу неробочий?'],
   ['', '10:00 - 20:00', 'вихідний', 'так'],
@@ -42,7 +45,15 @@ const rows = [
   ['5. Сценарії для вхідних дзвінків'],
   ['', 'Робочий час з Feedback', 'Неробочий час', 'Вихідний день'],
   ['', '0959999999', '0959999999', '0959999999'],
-  ['Голосове повідомлення "Привітання із Feedback закликом" Для ОТП: Версія 1', 'Стандартне Соловйова УКР', '', ''],
+  ['Голосове повідомлення "Робочий час З Feedback" Назва Об’єкта: Загальна', 'Стандартне українською', '', ''],
+  ['Вказати час дозвону', 'Випадковий вибір із групи', '', ''],
+  ['Вибрати потрібне правило сценарію', '801', '', ''],
+  ['Вказати назву групи', '30 секунд', '', ''],
+  ['Голосове повідомлення "Чекайте"', 'Стандартне українською', '', ''],
+  ['', 'Дзвінок на внутрішню лінію', '', ''],
+  ['', '901000', '', ''],
+  ['', '35 секунд', '', ''],
+  ['Голосове повідомлення "Вибачте"', 'Стандартне українською', '', ''],
   ['Голосове повідомлення "Неробочий час"', '', 'Стандартне повідомлення', ''],
   ['Голосове повідомлення "Вихідний день"', '', '', 'Стандартне повідомлення'],
   ['5.1. Запасні номери'],
@@ -60,6 +71,10 @@ const rows = [
 
 const parsed = api.parseTzSnapshot(rows, {}).patch;
 assert.deepEqual(JSON.parse(JSON.stringify(parsed.endpointRows.map(item => item.number))), ['901000', '902000']);
+assert.equal(parsed.tariff, 'Pro+');
+assert.equal(parsed.gsmNumberItems[0].operatorDependency, false);
+assert.equal(parsed.gsmNumberItems[0].createTemporary, true);
+assert.equal(parsed.externallyProvisionedNumbers, '');
 assert.equal(parsed.feedbackItems.length, 1);
 assert.deepEqual(JSON.parse(JSON.stringify(parsed.feedbackItems[0])), {
   key: 'feedback-1',
@@ -70,6 +85,13 @@ assert.deepEqual(JSON.parse(JSON.stringify(parsed.feedbackItems[0])), {
 assert.equal(parsed.scenarioItems.length, 3);
 assert.equal(parsed.scenarioItems[0].feedbackName, 'Загальна');
 assert.equal(parsed.scenarioItems[0].actions[0].voiceKey, 'ua_usolovyova_greeting-with-feedback-appeal-v1');
+assert.deepEqual(JSON.parse(JSON.stringify(parsed.scenarioItems[0].actions.slice(1))), [
+  { type: 'ringGroup', target: '801', timeout: '30' },
+  { type: 'voice', voiceKey: 'ua_waiting' },
+  { type: 'endpoint', target: '901000', timeout: '35' },
+  { type: 'voice', voiceKey: 'ua_sorryvm' },
+]);
+assert.equal(parsed.scenarioItems.find(item => item.name === 'Вихідний день').type, 'offHours');
 assert.equal(api.feedbackVoicePath(parsed.feedbackItems[0], 'beginning'), 'vOffice/base/production/voice/ua_usolovyova_feedback-beginning-v1');
 assert.equal(api.feedbackVoicePath(parsed.feedbackItems[0], 'csat'), 'vOffice/base/production/voice/ua_usolovyova_feedback-csat-v1');
 assert.equal(api.feedbackVoicePath(parsed.feedbackItems[0], 'thanks'), 'vOffice/base/production/voice/ua_usolovyova_feedback-thanks-v1');
@@ -85,6 +107,18 @@ assert.equal(api.isValidEndpointNumber('902000'), true);
 assert.equal(api.isValidEndpointNumber('99'), false);
 assert.equal(api.isValidEndpointNumber('001'), false);
 assert.equal(api.isValidEndpointNumber('10A'), false);
+const validationDraft = api.applyStructuredCompatibility({
+  ...JSON.parse(JSON.stringify(parsed)),
+  companyId: '10689', projectId: '101982', tzUrl: 'https://docs.google.com/test',
+  skipCompanyParams: true, blockStates: {},
+});
+assert.doesNotThrow(() => api.validateDraft(validationDraft));
+const withoutIncoming = JSON.parse(JSON.stringify(validationDraft));
+withoutIncoming.scheduleItems[0].incomingNumbers = [];
+assert.throws(() => api.validateDraft(withoutIncoming), /не вибрано жодного вхідного номера/);
+const withUnknownEndpoint = JSON.parse(JSON.stringify(validationDraft));
+withUnknownEndpoint.scenarioItems[0].actions.push({ type: 'endpoint', target: '999999', timeout: '30' });
+assert.throws(() => api.validateDraft(withUnknownEndpoint), /ВЛ 999999 відсутня у блоці 2/);
 const endpointPlan = api.buildExecutionPlan({
   companyId: '10689', projectId: '101982', tzUrl: 'https://docs.google.com/test',
   blockStates: {}, endpointRows: [{ number: '901000' }, { number: '902000' }],

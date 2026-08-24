@@ -22,7 +22,7 @@
       findInputByLabel('Адрес технического задания') ||
       findInputByLabel('Адрес технічного завдання') ||
       getField('input[name*="technical" i], input[name*="tz" i], input[name*="task" i]');
-    setFieldValue(tzUrlField, draft.tzUrl);
+    if (!tzUrlField || !setFieldValue(tzUrlField, draft.tzUrl)) throw new Error('Не вдалося заповнити посилання на ТЗ у параметрах компанії.');
 
     const tariffField =
       findInputByLabel('Пакет') ||
@@ -35,23 +35,27 @@
         : findSelectByOptionText(draft.tariff);
     if (tariffSelect) {
       const changed = setSelectValue(tariffSelect, draft.tariff);
-      log(changed ? `Пакет встановлено: ${draft.tariff}.` : `Не знайшов пакет у списку: ${draft.tariff}.`, changed ? 'success' : 'warn');
+      if (!changed) throw new Error(`Не знайшов пакет у списку: ${draft.tariff}.`);
+      log(`Пакет встановлено: ${draft.tariff}.`, 'success');
     } else {
-      log('Не знайшов поле "Пакет/Тариф".', 'warn');
+      throw new Error('Не знайшов поле "Пакет/Тариф".');
     }
 
     const languageField =
       findInputByLabel('Язык в MyBusiness') ||
       findInputByLabel('Мова в MyBusiness') ||
       getField('select[name*="language" i], select[name*="lang" i]');
-    if (languageField && languageField.tagName === 'SELECT') setSelectValue(languageField, draft.language);
+    if (!languageField || languageField.tagName !== 'SELECT' || !setSelectValue(languageField, draft.language)) {
+      throw new Error(`Не вдалося встановити мову MyBusiness: ${draft.language}.`);
+    }
 
     const timezoneField =
       findInputByLabel('Часовой пояс') ||
       findInputByLabel('Часовий пояс') ||
       getField('select[name*="timezone" i], select[name*="timeZone" i]');
-    if (timezoneField && timezoneField.tagName === 'SELECT') setSelectValue(timezoneField, draft.timezone);
+    if (!timezoneField || timezoneField.tagName !== 'SELECT' || !setSelectValue(timezoneField, draft.timezone)) {
+      throw new Error(`Не вдалося встановити часовий пояс: ${draft.timezone}.`);
+    }
 
     await clickSubmitAndContinue('Параметри компанії збережено.', 'endpoints', 0);
   }
-

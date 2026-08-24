@@ -236,14 +236,14 @@
 
     const headEnd = section.numbers >= 0 ? section.numbers : Math.min(rows.length, 12);
     const headerRows = rows.slice(0, headEnd);
-    const tariff = headerRows.flat().find(cell => TARIFFS.some(item => normalize(item) === normalize(cell)));
+    const tariff = headerRows.flat().find(cell => TARIFFS.some(item => normalize(item).replace(/\s+/g, '') === normalize(cell).replace(/\s+/g, '')));
     const regionRow = findTzRow(rows, /^регіон$|\| регіон \|/, 0, headEnd);
     const languageRow = findTzRow(rows, /мова mybusiness/, 0, headEnd);
     const regionCell = regionRow >= 0 ? findTzCell(rows[regionRow], /^регіон$/) : -1;
     const languageCell = languageRow >= 0 ? findTzCell(rows[languageRow], /мова mybusiness/) : -1;
     const region = regionRow >= 0 ? nextTzValue(rows[regionRow], regionCell) : '';
     const language = languageRow >= 0 ? tzLanguageCode(nextTzValue(rows[languageRow], languageCell)) : '';
-    if (tariff) patch.tariff = TARIFFS.find(item => normalize(item) === normalize(tariff)) || tariff;
+    if (tariff) patch.tariff = TARIFFS.find(item => normalize(item).replace(/\s+/g, '') === normalize(tariff).replace(/\s+/g, '')) || tariff;
     if (region) patch.region = region;
     if (language) patch.language = language;
     patch.skipCompanyParams = false;
@@ -254,21 +254,29 @@
     const numberEnd = section.endpoints >= 0 ? section.endpoints : rows.length;
     const phoneRow = findTzRow(rows, /номери телефонів.*форматі/, section.numbers + 1, numberEnd);
     const phoneNameRow = findTzRow(rows, /підписати номер у лк як/, section.numbers + 1, numberEnd);
+    const phoneConnectionRow = findTzRow(rows, /дані для підключення номера/, section.numbers + 1, numberEnd);
     if (phoneRow >= 0) {
       const phoneLabelColumn = findTzCell(rows[phoneRow], /номери телефонів.*форматі/);
       rows[phoneRow].forEach((cell, column) => {
         if (column <= phoneLabelColumn) return;
-        extractTzPhones(cell).forEach(number => patch.gsmNumberItems.push({
-          number,
-          name: phoneNameRow >= 0 ? clean(rows[phoneNameRow][column]) : '',
-          email: '',
-          createTemporary: false,
-          operatorDependency: true,
-        }));
+        extractTzPhones(cell).forEach(number => {
+          const connection = clean(rows[phoneConnectionRow]?.[column]);
+          const rawName = phoneNameRow >= 0 ? clean(rows[phoneNameRow][column]) : '';
+          const name = rawName.length <= 80 && !/sip[-\s]?(логін|логин|парол)|безпека|безопасность|тип підключення|тип подключения/i.test(rawName) ? rawName : '';
+          patch.gsmNumberItems.push({
+            number,
+            name,
+            email: '',
+            createTemporary: /встановлен\S*\s+пізніше|буде\s+встановлен\S*\s+пізніше|установлен\S*\s+позже/i.test(connection),
+            operatorDependency: /оператор.*додає.*самостійно|оператор.*добавляет.*самостоятельно/i.test(connection),
+          });
+        });
       });
     }
     if (section.numbers < 0) issues.gsmNumbers = 'Не знайдено розділ 1 з номерами компанії.';
     else if (!patch.gsmNumberItems.length) issues.gsmNumbers = 'Розділ номерів знайдено, але жодного номера не розпізнано.';
+    patch.externallyProvisionedNumbers = patch.gsmNumberItems.filter(item => item.operatorDependency).map(item => item.number).join(', ');
+    patch.createTemporaryNumbers = patch.gsmNumberItems.some(item => item.createTemporary);
 
     const endpointEnd = section.departments >= 0 ? section.departments : rows.length;
     const endpointNumberRow = findTzRow(rows, /вкажіть нумерацію внутрішніх ліній/, section.endpoints + 1, endpointEnd);
@@ -417,7 +425,11 @@
           const value = clean(rows[index][column]);
           if (!value) continue;
           const rowContext = `${clean(rows[index]?.[0])} ${value}`;
-          const voiceKey = tzVoiceKey(rowContext);
+          let voiceKey = tzVoiceKey(rowContext);
+          if (/greeting-with-feedback-appeal/.test(voiceKey) && !feedbackSpeakerFromText(rowContext) && patch.feedbackItems.length === 1) {
+            const feedbackSpeaker = FEEDBACK_SPEAKERS[patch.feedbackItems[0].speaker];
+            if (feedbackSpeaker) voiceKey = `${feedbackSpeaker.voicePrefix}_greeting-with-feedback-appeal-v1`;
+          }
           if (/голосове повідомлення|привітання|feedback|фідбек/i.test(rowContext) && voiceKey) {
             actions.push({ type: 'voice', voiceKey });
             if (!/greeting-with-feedback-appeal/.test(voiceKey)) voiceKeys.add(voiceKey);
@@ -466,7 +478,7 @@
         patch.scenarioItems.push({
           key: `scenario-${patch.scenarioItems.length + 1}`,
           name,
-          type: /неробоч/.test(normalize(name)) ? 'offHours' : 'working',
+          type: /неробоч|вихідн|выходн|аварійн|аварийн/.test(normalize(name)) ? 'offHours' : 'working',
           feedbackName,
           actions,
           incomingNumbers,

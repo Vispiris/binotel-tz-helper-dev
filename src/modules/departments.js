@@ -41,8 +41,10 @@
       department.name
     );
 
+    const temporaryMap = getTemporaryMap();
+    const departmentPhoneNumbers = [...new Set(department.phoneNumbers.flatMap(number => [clean(number), clean(temporaryMap[clean(number)])]).filter(Boolean))];
     const targets = [
-      ...department.phoneNumbers,
+      ...departmentPhoneNumbers,
       ...department.endpoints,
     ].map(clean).filter(Boolean);
 
@@ -57,8 +59,7 @@
     });
 
     if (selected.length) log(`Для відділу "${department.name}" вибрано: ${selected.join(', ')}`, 'success');
-    if (missing.length) log(`Не знайшов для відділу "${department.name}": ${missing.join(', ')}`, 'warn');
+    if (missing.length) throw new Error(`Не знайшов для відділу "${department.name}": ${missing.join(', ')}. Відділ не збережено.`);
 
     await clickSubmitAndContinue(`Відділ "${department.name}" збережено.`, 'departments', index + 1);
   }
-

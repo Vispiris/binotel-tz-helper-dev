@@ -37,10 +37,15 @@
       }));
 
       if (inTargetProject) {
+        if (flow.endpointAction === 'verifyAfterCreate') log(`ВЛ ${line} створено та перевірено.`, 'success');
         log(`ВЛ ${line} вже існує саме у проєкті ${draft.projectId} — перевірено, пропускаю.`, 'success');
         saveFlow({ stage: 'endpoints', index: index + 1, endpointAction: '' });
         await runAutomaticFlow();
         return;
+      }
+
+      if (flow.endpointAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження ВЛ ${line} не знайдено у проєкті ${draft.projectId}. Повторне створення заборонене.`);
       }
 
       saveFlow({ stage: 'endpoints', index, endpointAction: 'create' });
@@ -62,7 +67,7 @@
       throw new Error(`Не зміг вибрати проєкт ${draft.projectId} для ВЛ ${line}.`);
     }
 
-    saveFlow({ stage: 'endpoints', index: index + 1, endpointAction: '' });
+    saveFlow({ stage: 'endpoints', index, endpointAction: 'verifyAfterCreate' });
     log(`Зберігаю ВЛ ${line} у проєкті ${draft.projectId}.`, 'info');
     if (!clickSubmitNear(numberField, ['Сохранить', 'Зберегти'])) {
       throw new Error(`Не знайшов кнопку збереження ВЛ ${line}.`);

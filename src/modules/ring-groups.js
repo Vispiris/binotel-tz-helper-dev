@@ -200,10 +200,15 @@
 
       const existence = getRingGroupExistence(groupNumber, groupName, draft.projectId);
       if (existence.inTargetProject) {
+        if (flow.ringGroupAction === 'verifyAfterCreate') log(`Групу ${groupNumber} створено та перевірено.`, 'success');
         log(`Група ${groupNumber} / "${groupName}" вже існує у потрібному проєкті — пропускаю створення.`, 'success');
         saveFlow({ stage: 'ringGroups', index: index + 1, ringGroupAction: '' });
         await runAutomaticFlow();
         return;
+      }
+
+      if (flow.ringGroupAction === 'verifyAfterCreate') {
+        throw new Error(`Після збереження групу ${groupNumber} / "${groupName}" не знайдено. Повторне створення заборонене.`);
       }
 
       if (existence.exists) {
@@ -238,19 +243,12 @@
     }
 
     if (missing.length) {
-      log(`Не знайшов ВЛ для групи ${groupNumber}: ${missing.join(', ')}`, 'warn');
+      throw new Error(`Не знайшов ВЛ для групи ${groupNumber}: ${missing.join(', ')}. Групу не збережено.`);
     }
 
+    saveFlow({ stage: 'ringGroups', index, ringGroupAction: 'verifyAfterCreate' });
     const clicked = clickButtonByText(['Сохранить', 'Зберегти', 'Добавить', 'Додати']);
     if (!clicked) throw new Error('Не знайшов кнопку збереження/додавання групи.');
 
-    saveFlow({ stage: 'ringGroups', index: index + 1, ringGroupAction: '' });
     log(`Група ${groupNumber} збережена.`, 'success');
-    await sleep(1200);
-    await continueAfterRingGroupSave_();
   }
-
-  async function continueAfterRingGroupSave_() {
-    await runAutomaticFlow();
-  }
-
