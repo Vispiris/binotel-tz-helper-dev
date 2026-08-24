@@ -1,1 +1,21 @@
-# binotel-tz-helper-dev
+# Binotel TZ Helper DEV
+
+Тестовий Tampermonkey-помічник для читання технічного завдання, побудови плану та
+виконання перевірених операцій у панелі Binotel.
+
+Це лише DEV-версія для розробки й тестування. Вона не призначена для інженерів або
+роботи з виробничими компаніями.
+
+## Встановлення
+
+Відкрити [актуальний userscript](https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js)
+і підтвердити встановлення в Tampermonkey.
+
+Після першого встановлення Tampermonkey перевірятиме оновлення за адресами
+`@updateURL` і `@downloadURL` у заголовку скрипта.
+
+## Безпека
+
+Репозиторій не повинен містити паролі, SIP-дані, токени, персональні дані клієнтів
+або експорти реальних ТЗ.
+
