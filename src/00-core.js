@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.3-dev';
+  const SCRIPT_VERSION = '0.16.0-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -14,6 +14,7 @@
     logStorageKey: 'binotel_tz_helper_safe_dev_log_v1',
     deleteFlowStorageKey: 'binotel_tz_helper_safe_dev_delete_flow_v2',
     tzCaptureStorageKey: 'binotel_tz_helper_safe_dev_sheet_capture_v1',
+    localParserUrl: 'http://127.0.0.1:8765/parse',
     pbxSchemeModule: 'pbxScheme',
     companyParamsModule: 'companyProperties',
     endpointsModule: 'endpoints',

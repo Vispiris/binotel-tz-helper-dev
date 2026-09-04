@@ -555,6 +555,41 @@
     return { patch, blockStates, issues };
   }
 
+  function requestPythonTzParse(rows, currentBlockStates) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'POST',
+        url: CONFIG.localParserUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Binotel-TZ-Parser': '1',
+        },
+        data: JSON.stringify({ rows, currentBlockStates: currentBlockStates || {} }),
+        timeout: 30000,
+        onload: response => {
+          let payload;
+          try {
+            payload = JSON.parse(response.responseText || '{}');
+          } catch (error) {
+            reject(new Error('Python-парсер повернув некоректну відповідь.'));
+            return;
+          }
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(payload.error || `Python-парсер повернув HTTP ${response.status}.`));
+            return;
+          }
+          if (payload.apiVersion !== 1 || !payload.patch || !payload.blockStates || !payload.issues) {
+            reject(new Error('Версія або структура відповіді Python-парсера не підтримується.'));
+            return;
+          }
+          resolve(payload);
+        },
+        onerror: () => reject(new Error('Python-парсер недоступний. Запусти start-python-parser.ps1 і повтори читання ТЗ.')),
+        ontimeout: () => reject(new Error('Python-парсер не відповів за 30 секунд.')),
+      });
+    });
+  }
+
   async function readTzFromSheet() {
     const modal = $(`#${CONFIG.modalId}`);
     let captured;
@@ -569,7 +604,7 @@
     const nonEmpty = captured.rows;
     if (!nonEmpty.length) throw new Error('Таблиця прочитана, але вибраний лист порожній.');
     const current = collectModalDraft();
-    const parsed = parseTzSnapshot(nonEmpty, current);
+    const parsed = await requestPythonTzParse(nonEmpty, current.blockStates);
     const next = saveDraft(applyStructuredCompatibility({
       ...current,
       ...parsed.patch,
@@ -580,7 +615,7 @@
       tzReadAt: new Date().toISOString(),
     }));
     const recognizedCount = TZ_BLOCKS.length - Object.keys(parsed.issues).length;
-    log(`ТЗ розібрано: ${captured.title || 'ТЗ'}, розпізнано блоків ${recognizedCount}/${TZ_BLOCKS.length}.`, Object.keys(parsed.issues).length ? 'warn' : 'success');
+    log(`ТЗ розібрано Python-парсером: ${captured.title || 'ТЗ'}, розпізнано блоків ${recognizedCount}/${TZ_BLOCKS.length}.`, Object.keys(parsed.issues).length ? 'warn' : 'success');
     Object.entries(parsed.issues).forEach(([blockId, issue]) => log(`Блок ${TZ_BLOCKS.find(item => item.id === blockId)?.number || blockId}: ${issue}`, 'warn'));
     renderModal();
     $(`#${CONFIG.modalId}`).classList.add('open');

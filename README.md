@@ -18,11 +18,24 @@ node tools/build-userscript.mjs
 `tampermonkey/binotel-tz-helper-safe-dev.user.js` є готовою збіркою. Його не
 потрібно редагувати вручну.
 
+## Локальний Python-парсер
+
+Python читає знімок відкритого листа, перевіряє зв’язки між блоками й повертає
+структуровані дані у той самий конструктор Tampermonkey. Перед читанням ТЗ запусти:
+
+```powershell
+.\start-python-parser.ps1
+```
+
+Сервіс працює лише локально на `127.0.0.1:8765`. Tampermonkey не переходить до
+старого парсера непомітно: якщо сервіс не запущено, інженер отримає явну помилку.
+
 Перевірка парсера Feedback:
 
 ```powershell
 node tests/feedback-parser.test.mjs
 node tests/build-integrity.test.mjs
+python -m unittest tests/test_python_parser.py
 ```
 
 ## Встановлення

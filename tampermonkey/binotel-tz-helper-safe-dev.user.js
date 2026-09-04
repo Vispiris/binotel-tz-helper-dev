@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.15.3-dev
+// @version      0.16.0-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -15,12 +15,14 @@
 // @grant        unsafeWindow
 // @connect      docs.google.com
 // @connect      googleusercontent.com
+// @connect      127.0.0.1
+// @connect      localhost
 // @noframes
 // ==/UserScript==
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.15.3-dev';
+  const SCRIPT_VERSION = '0.16.0-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -33,6 +35,7 @@
     logStorageKey: 'binotel_tz_helper_safe_dev_log_v1',
     deleteFlowStorageKey: 'binotel_tz_helper_safe_dev_delete_flow_v2',
     tzCaptureStorageKey: 'binotel_tz_helper_safe_dev_sheet_capture_v1',
+    localParserUrl: 'http://127.0.0.1:8765/parse',
     pbxSchemeModule: 'pbxScheme',
     companyParamsModule: 'companyProperties',
     endpointsModule: 'endpoints',
@@ -3954,6 +3957,41 @@
     return { patch, blockStates, issues };
   }
 
+  function requestPythonTzParse(rows, currentBlockStates) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'POST',
+        url: CONFIG.localParserUrl,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Binotel-TZ-Parser': '1',
+        },
+        data: JSON.stringify({ rows, currentBlockStates: currentBlockStates || {} }),
+        timeout: 30000,
+        onload: response => {
+          let payload;
+          try {
+            payload = JSON.parse(response.responseText || '{}');
+          } catch (error) {
+            reject(new Error('Python-парсер повернув некоректну відповідь.'));
+            return;
+          }
+          if (response.status < 200 || response.status >= 300) {
+            reject(new Error(payload.error || `Python-парсер повернув HTTP ${response.status}.`));
+            return;
+          }
+          if (payload.apiVersion !== 1 || !payload.patch || !payload.blockStates || !payload.issues) {
+            reject(new Error('Версія або структура відповіді Python-парсера не підтримується.'));
+            return;
+          }
+          resolve(payload);
+        },
+        onerror: () => reject(new Error('Python-парсер недоступний. Запусти start-python-parser.ps1 і повтори читання ТЗ.')),
+        ontimeout: () => reject(new Error('Python-парсер не відповів за 30 секунд.')),
+      });
+    });
+  }
+
   async function readTzFromSheet() {
     const modal = $(`#${CONFIG.modalId}`);
     let captured;
@@ -3968,7 +4006,7 @@
     const nonEmpty = captured.rows;
     if (!nonEmpty.length) throw new Error('Таблиця прочитана, але вибраний лист порожній.');
     const current = collectModalDraft();
-    const parsed = parseTzSnapshot(nonEmpty, current);
+    const parsed = await requestPythonTzParse(nonEmpty, current.blockStates);
     const next = saveDraft(applyStructuredCompatibility({
       ...current,
       ...parsed.patch,
@@ -3979,7 +4017,7 @@
       tzReadAt: new Date().toISOString(),
     }));
     const recognizedCount = TZ_BLOCKS.length - Object.keys(parsed.issues).length;
-    log(`ТЗ розібрано: ${captured.title || 'ТЗ'}, розпізнано блоків ${recognizedCount}/${TZ_BLOCKS.length}.`, Object.keys(parsed.issues).length ? 'warn' : 'success');
+    log(`ТЗ розібрано Python-парсером: ${captured.title || 'ТЗ'}, розпізнано блоків ${recognizedCount}/${TZ_BLOCKS.length}.`, Object.keys(parsed.issues).length ? 'warn' : 'success');
     Object.entries(parsed.issues).forEach(([blockId, issue]) => log(`Блок ${TZ_BLOCKS.find(item => item.id === blockId)?.number || blockId}: ${issue}`, 'warn'));
     renderModal();
     $(`#${CONFIG.modalId}`).classList.add('open');

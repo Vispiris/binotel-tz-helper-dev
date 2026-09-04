@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.15.3-dev
+// @version      0.16.0-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -15,5 +15,7 @@
 // @grant        unsafeWindow
 // @connect      docs.google.com
 // @connect      googleusercontent.com
+// @connect      127.0.0.1
+// @connect      localhost
 // @noframes
 // ==/UserScript==
