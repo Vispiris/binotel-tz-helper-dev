@@ -12,8 +12,8 @@ from binotel_tz import parse_tz_snapshot
 ROWS = [
     ["Pro +"], ["Регіон", "Україна"], ["Мова MyBusiness", "Українська"],
     ["1. Номери компанії, які підключаємо до ВАТС"],
-    ["Номери телефонів (у форматі 0931112233)", "0689999998", "0739999998"],
-    ["Дані для підключення номера", "Картка буде встановлена пізніше", "SIP реєстрація"],
+    ["Номери телефонів (у форматі 0931112233)", "Тимчасовий номер Binotel 1", "068 999 99 98", "073-999-99-98"],
+    ["Дані для підключення номера", "ОТП додає номер самостійно", "Картка буде встановлена ​​пізніше", "SIP реєстрація"],
     ["Графік роботи"],
     ["", "Пн-Сб:", "Неділя:", "Решта часу неробочий?"],
     ["", "10:00 - 20:00", "вихідний", "так"],
@@ -70,6 +70,14 @@ class PythonParserTest(unittest.TestCase):
         self.assertNotIn("endpoints", self.result["issues"])
         self.assertNotIn("ringGroups", self.result["issues"])
         self.assertNotIn("departments", self.result["issues"])
+
+    def test_explicit_no_groups_is_not_a_parser_error(self):
+        no_groups = [list(row) for row in ROWS]
+        number_row = next(index for index, row in enumerate(no_groups) if row and row[0] == "Вкажіть номери груп")
+        no_groups[number_row][1] = "не потрібно"
+        no_groups[number_row + 2][1] = ""
+        result = parse_tz_snapshot(no_groups)
+        self.assertNotIn("ringGroups", result["issues"])
 
     def test_feedback_scenarios_and_schedule(self):
         self.assertEqual(self.patch["feedbackItems"][0]["speaker"], "usolovyova")

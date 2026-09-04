@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Any, Iterable
 
 
@@ -24,7 +25,8 @@ SPEAKERS = {
 
 
 def clean(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").replace("\xa0", " ")).strip()
+    text = "".join(char for char in str(value or "") if unicodedata.category(char) != "Cf")
+    return re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
 
 
 def norm(value: Any) -> str:
@@ -65,7 +67,7 @@ def normalize_phone(value: Any) -> str:
 
 
 def phones(value: Any) -> list[str]:
-    found = re.findall(r"(?:\+?38\d{10}|0\d{9})", str(value or ""))
+    found = re.findall(r"(?<!\d)(?:\+?38[\s().-]*)?0\d(?:[\s().-]*\d){8}(?!\d)", clean(value))
     return unique(normalize_phone(item) for item in found if normalize_phone(item))
 
 
@@ -197,6 +199,7 @@ def parse_tz_snapshot(source_rows: list[list[Any]], current_block_states: dict[s
     connection_row = find_row(rows, r"дані для підключення номера", section["numbers"] + 1, number_end)
     if phone_row >= 0:
         label_column = find_cell(rows[phone_row], r"номери телефонів.*форматі")
+        temporary_requested = len(re.findall(r"тимчасовий номер binotel(?:\s*\d+)?", norm(" ".join(rows[phone_row]))))
         for column, cell in enumerate(rows[phone_row]):
             if column <= label_column:
                 continue
@@ -209,6 +212,12 @@ def parse_tz_snapshot(source_rows: list[list[Any]], current_block_states: dict[s
                     "createTemporary": bool(re.search(r"встановлен\S*\s+пізніше|буде\s+встановлен\S*\s+пізніше|установлен\S*\s+позже", connection, re.I)),
                     "operatorDependency": bool(re.search(r"оператор.*додає.*самостійно|оператор.*добавляет.*самостоятельно", connection, re.I)),
                 })
+        if temporary_requested:
+            candidates = [item for item in patch["gsmNumberItems"] if item["createTemporary"]]
+            for item in candidates:
+                item["createTemporary"] = False
+            for item in candidates[:temporary_requested]:
+                item["createTemporary"] = True
     if section["numbers"] < 0:
         issues["gsmNumbers"] = "Не знайдено розділ 1 з номерами компанії."
     elif not patch["gsmNumberItems"]:
@@ -247,7 +256,7 @@ def parse_tz_snapshot(source_rows: list[list[Any]], current_block_states: dict[s
         width = max(len(rows[department_name_row]), len(rows[department_number_row]), len(rows[department_lines_row]) if department_lines_row >= 0 else 0)
         for column in range(1, width):
             name = rows[department_name_row][column] if column < len(rows[department_name_row]) else ""
-            if not name or re.fullmatch(r"номери|лінії", name, re.I):
+            if not name or re.fullmatch(r"назва відділу|номери|лінії", name, re.I):
                 continue
             patch["departmentItems"].append({
                 "name": name,
@@ -271,9 +280,10 @@ def parse_tz_snapshot(source_rows: list[list[Any]], current_block_states: dict[s
                     "name": rows[group_name_row][column] if group_name_row >= 0 and column < len(rows[group_name_row]) else "",
                     "endpoints": numbers(rows[group_lines_row][column]) if group_lines_row >= 0 and column < len(rows[group_lines_row]) else [],
                 })
+    groups_not_needed = group_number_row >= 0 and any(placeholder(cell) for cell in rows[group_number_row][1:])
     if section["groups"] < 0:
         issues["ringGroups"] = "Не знайдено розділ 4 з групами."
-    elif not patch["ringGroupItems"]:
+    elif not patch["ringGroupItems"] and not groups_not_needed:
         issues["ringGroups"] = "Розділ груп знайдено, але групи не розпізнано."
 
     feedback_speaker = ""

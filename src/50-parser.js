@@ -132,7 +132,7 @@
   }
 
   function extractTzPhones(value) {
-    const matches = String(value || '').match(/(?:\+?38\d{10}|0\d{9})/g) || [];
+    const matches = clean(value).match(/(?:\+?38[\s().-]*)?0\d(?:[\s().-]*\d){8}/g) || [];
     return [...new Set(matches.map(normalizeTzPhone).filter(Boolean))];
   }
 
@@ -342,7 +342,7 @@
       const width = Math.max(rows[departmentNameRow].length, rows[departmentNumberRow]?.length || 0, rows[departmentLinesRow]?.length || 0);
       for (let column = 1; column < width; column += 1) {
         const name = clean(rows[departmentNameRow][column]);
-        if (!name || /^номери$|^лінії$/i.test(name)) continue;
+        if (!name || /^назва відділу$|^номери$|^лінії$/i.test(name)) continue;
         patch.departmentItems.push({
           name,
           phoneNumbers: departmentNumberRow >= 0 ? extractTzPhones(rows[departmentNumberRow][column]) : [],
@@ -366,8 +366,9 @@
         }));
       });
     }
+    const groupsNotNeeded = groupNumberRow >= 0 && rows[groupNumberRow].slice(1).some(isTzPlaceholder);
     if (section.groups < 0) issues.ringGroups = 'Не знайдено розділ 4 з групами.';
-    else if (!patch.ringGroupItems.length) issues.ringGroups = 'Розділ груп знайдено, але групи не розпізнано.';
+    else if (!patch.ringGroupItems.length && !groupsNotNeeded) issues.ringGroups = 'Розділ груп знайдено, але групи не розпізнано.';
 
     const voiceEnd = section.feedback >= 0 ? section.feedback : (section.voicesEnd >= 0 ? section.voicesEnd : rows.length);
     const voiceKeys = new Set();

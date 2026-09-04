@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.16.0-dev';
+  const SCRIPT_VERSION = '0.16.1-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -318,7 +318,7 @@
   }
 
   function clean(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
+    return String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function normalize(value) {

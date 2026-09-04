@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Binotel TZ helper SAFE DEV
 // @namespace    http://tampermonkey.net/
-// @version      0.16.0-dev
+// @version      0.16.1-dev
 // @description  Конструктор та безпечний виконавець ТЗ Binotel
 // @author       Codex
 // @updateURL    https://raw.githubusercontent.com/Vispiris/binotel-tz-helper-dev/main/tampermonkey/binotel-tz-helper-safe-dev.user.js
@@ -22,7 +22,7 @@
 (function () {
   'use strict';
 
-  const SCRIPT_VERSION = '0.16.0-dev';
+  const SCRIPT_VERSION = '0.16.1-dev';
 
   const CONFIG = {
     panelId: 'binotel-tz-helper-safe-dev-panel',
@@ -339,7 +339,7 @@
   }
 
   function clean(value) {
-    return String(value || '').replace(/\s+/g, ' ').trim();
+    return String(value || '').replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/\s+/g, ' ').trim();
   }
 
   function normalize(value) {
@@ -3534,7 +3534,7 @@
   }
 
   function extractTzPhones(value) {
-    const matches = String(value || '').match(/(?:\+?38\d{10}|0\d{9})/g) || [];
+    const matches = clean(value).match(/(?:\+?38[\s().-]*)?0\d(?:[\s().-]*\d){8}/g) || [];
     return [...new Set(matches.map(normalizeTzPhone).filter(Boolean))];
   }
 
@@ -3744,7 +3744,7 @@
       const width = Math.max(rows[departmentNameRow].length, rows[departmentNumberRow]?.length || 0, rows[departmentLinesRow]?.length || 0);
       for (let column = 1; column < width; column += 1) {
         const name = clean(rows[departmentNameRow][column]);
-        if (!name || /^номери$|^лінії$/i.test(name)) continue;
+        if (!name || /^назва відділу$|^номери$|^лінії$/i.test(name)) continue;
         patch.departmentItems.push({
           name,
           phoneNumbers: departmentNumberRow >= 0 ? extractTzPhones(rows[departmentNumberRow][column]) : [],
@@ -3768,8 +3768,9 @@
         }));
       });
     }
+    const groupsNotNeeded = groupNumberRow >= 0 && rows[groupNumberRow].slice(1).some(isTzPlaceholder);
     if (section.groups < 0) issues.ringGroups = 'Не знайдено розділ 4 з групами.';
-    else if (!patch.ringGroupItems.length) issues.ringGroups = 'Розділ груп знайдено, але групи не розпізнано.';
+    else if (!patch.ringGroupItems.length && !groupsNotNeeded) issues.ringGroups = 'Розділ груп знайдено, але групи не розпізнано.';
 
     const voiceEnd = section.feedback >= 0 ? section.feedback : (section.voicesEnd >= 0 ? section.voicesEnd : rows.length);
     const voiceKeys = new Set();

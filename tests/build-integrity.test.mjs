@@ -16,7 +16,7 @@ const output = fs.readFileSync(path.join(root, 'tampermonkey', 'binotel-tz-helpe
 
 assert.equal(output, expected, 'userscript must be the exact concatenation of source modules');
 assert.equal((output.match(/==UserScript==/g) || []).length, 1);
-assert.match(output, /@version\s+0\.16\.0-dev/);
+assert.match(output, /@version\s+0\.16\.1-dev/);
 assert.match(output, /localParserUrl:\s*'http:\/\/127\.0\.0\.1:8765\/parse'/);
 assert.match(output, /requestPythonTzParse/);
 assert.match(output, /async function applyFeedback\(\)/);
